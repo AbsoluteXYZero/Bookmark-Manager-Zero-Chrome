@@ -379,8 +379,8 @@ function releaseFocusTrap() {
   }
 }
 
-// Check if running in preview mode (no browser API available)
-const isPreviewMode = typeof chrome === 'undefined';
+// Check if running in preview mode (no extension API available)
+const isPreviewMode = typeof chrome === 'undefined' || typeof chrome.bookmarks === 'undefined';
 
 // State
 let bookmarkTree = [];
