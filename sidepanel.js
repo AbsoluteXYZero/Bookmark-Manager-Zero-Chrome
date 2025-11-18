@@ -380,8 +380,8 @@ function releaseFocusTrap() {
 }
 
 // Check if running in preview mode (no extension API available)
-// chrome.runtime.id is only defined when running as an actual Chrome extension
-const isPreviewMode = !chrome?.runtime?.id;
+// Check for chrome.bookmarks which is only available in extensions with bookmarks permission
+const isPreviewMode = !chrome?.bookmarks;
 
 // State
 let bookmarkTree = [];
