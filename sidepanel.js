@@ -654,7 +654,7 @@ function updateZoomDisplay() {
   }
   if (zoomValue) zoomValue.textContent = `${zoomLevel}%`;
 }
-// Load bookmarks from Firefox API
+// Load bookmarks from Chrome API
 async function loadBookmarks() {
   if (isPreviewMode) {
     // Use mock data for preview
@@ -2208,10 +2208,10 @@ async function deleteFolder(id) {
     return;
   }
 
-  // SAFETY: Prevent deletion of Firefox's built-in bookmark folders
-  const protectedFolderIds = ['menu________', 'toolbar_____', 'unfiled_____', 'mobile______'];
+  // SAFETY: Prevent deletion of Chrome's built-in bookmark folders
+  const protectedFolderIds = ['0', '1', '2'];
   if (protectedFolderIds.includes(id)) {
-    alert('⚠ Cannot delete built-in Firefox bookmark folders (Bookmarks Menu, Bookmarks Toolbar, Other Bookmarks, Mobile Bookmarks).\n\nThis is a safety feature to protect your bookmark structure.');
+    alert('⚠ Cannot delete built-in Chrome bookmark folders (Bookmarks Bar, Other Bookmarks).\n\nThis is a safety feature to protect your bookmark structure.');
     return;
   }
 
@@ -3076,7 +3076,7 @@ async function saveNewBookmark() {
 
   // Check if trying to create bookmark at root level
   if (!parentId) {
-    alert('Firefox does not allow creating bookmarks at the root level. Please select a parent folder (Bookmarks Menu, Bookmarks Toolbar, Other Bookmarks, or any existing folder/subfolder) to create your bookmark in.');
+    alert('Chrome does not allow creating bookmarks at the root level. Please select a parent folder (Bookmarks Bar, Other Bookmarks, or any existing folder/subfolder) to create your bookmark in.');
     return;
   }
 
@@ -3183,7 +3183,7 @@ async function saveNewFolder() {
 
   // Check if trying to create folder at root level
   if (!parentId) {
-    alert('Firefox does not allow creating folders at the root level. Please select a parent folder (Bookmarks Menu, Bookmarks Toolbar, Other Bookmarks, or any existing folder/subfolder) to create your folder in.');
+    alert('Chrome does not allow creating folders at the root level. Please select a parent folder (Bookmarks Bar, Other Bookmarks, or any existing folder/subfolder) to create your folder in.');
     return;
   }
 
@@ -3339,7 +3339,7 @@ function showError(message) {
 // Open extension in new tab
 async function openInNewTab() {
   if (isPreviewMode) {
-    alert('🗗 In the Firefox extension, this would open Bookmark Manager Zero in a new tab for a full-page view.');
+    alert('🗗 In the Chrome extension, this would open Bookmark Manager Zero in a new tab for a full-page view.');
     return;
   }
 
@@ -3413,9 +3413,9 @@ async function exportBookmarks() {
     const format = confirm(
       'Choose export format:\n\n' +
       'OK = HTML (compatible with all browsers)\n' +
-      'Cancel = JSON (Firefox native format)\n\n' +
-      'HTML format can be imported into any chrome.\n' +
-      'JSON format preserves all Firefox bookmark metadata.'
+      'Cancel = JSON (Chrome native format)\n\n' +
+      'HTML format can be imported into any browser.\n' +
+      'JSON format preserves all Chrome bookmark metadata.'
     ) ? 'html' : 'json';
 
     let data;
@@ -3469,8 +3469,8 @@ async function exportBookmarks() {
       alert(
         `✓ Bookmarks exported as JSON!\n\n` +
         `File: ${filename}\n\n` +
-        `This backup can be imported back into Firefox via:\n` +
-        `Bookmarks → Manage Bookmarks → Import and Backup → Restore → Choose File`
+        `This backup can be imported back into Chrome via:\n` +
+        `Bookmarks → Bookmark manager → ⋮ → Import bookmarks`
       );
     }
   } catch (error) {
@@ -3778,21 +3778,19 @@ async function viewErrorLogs() {
 // Close extension
 async function closeExtension() {
   if (isPreviewMode) {
-    alert('✕ In the Firefox extension, this would close the sidebar or tab.');
+    alert('✕ In the Chrome extension, this would close the side panel or tab.');
     return;
   }
 
   try {
-    // Check if we're running in a sidebar or a tab
+    // Check if we're running in a side panel or a tab
     const currentTab = await chrome.tabs.getCurrent();
 
     if (currentTab && currentTab.id) {
       // We're in a tab, so close the tab
       await chrome.tabs.remove(currentTab.id);
     } else {
-      // We're in a sidebar, use sidebarAction to close it
-      // Note: Firefox doesn't have a direct API to close sidebar programmatically
-      // We'll try to close the window, which works for sidebar panels
+      // We're in a side panel, just close the window
       window.close();
     }
   } catch (error) {
@@ -3927,7 +3925,7 @@ async function clearOldCacheEntries(maxAgeDays) {
 
 async function clearCache() {
   if (isPreviewMode) {
-    alert('🧹 In the Firefox extension, this would clear the cache for link and safety checks.');
+    alert('🧹 In the Chrome extension, this would clear the cache for link and safety checks.');
     return;
   }
 
@@ -3949,7 +3947,7 @@ async function clearCache() {
 // Rescan all bookmarks (clear cache and force re-check)
 async function rescanAllBookmarks() {
   if (isPreviewMode) {
-    alert('🔄 In the Firefox extension, this would clear cache and rescan all bookmarks.');
+    alert('🔄 In the Chrome extension, this would clear cache and rescan all bookmarks.');
     return;
   }
 
@@ -4570,7 +4568,7 @@ function setupEventListeners() {
   });
 
   // BIDIRECTIONAL SYNC: Listen for bookmark changes (only in extension mode)
-  // This ensures the extension automatically updates when bookmarks change in Firefox
+  // This ensures the extension automatically updates when bookmarks change in Chrome
   if (!isPreviewMode) {
     let syncTimeout = null;
 
@@ -4579,7 +4577,7 @@ function setupEventListeners() {
       clearTimeout(syncTimeout);
       syncTimeout = setTimeout(async () => {
         try {
-          console.log(`[Bookmark Sync] ${eventType} - Syncing bookmarks from Firefox...`);
+          console.log(`[Bookmark Sync] ${eventType} - Syncing bookmarks from Chrome...`);
           await loadBookmarks();
           renderBookmarks();
           console.log('[Bookmark Sync] ✓ Sync complete');
