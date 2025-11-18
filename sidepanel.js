@@ -646,10 +646,14 @@ function setZoom(newZoom) {
 
 // Update zoom display
 function updateZoomDisplay() {
-  if (zoomSlider) zoomSlider.value = zoomLevel;
+  if (zoomSlider) {
+    zoomSlider.value = zoomLevel;
+    // Update the slider track fill color
+    const progress = ((zoomLevel - 50) / (200 - 50)) * 100;
+    zoomSlider.style.setProperty('--zoom-progress', `${progress}%`);
+  }
   if (zoomValue) zoomValue.textContent = `${zoomLevel}%`;
 }
-
 // Load bookmarks from Firefox API
 async function loadBookmarks() {
   if (isPreviewMode) {
