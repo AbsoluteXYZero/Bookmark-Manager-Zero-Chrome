@@ -379,8 +379,9 @@ function releaseFocusTrap() {
   }
 }
 
-// Check if running in preview mode (no browser API available)
-const isPreviewMode = typeof browser === 'undefined';
+// Check if running in preview mode (no extension API available)
+// chrome.runtime.id is only defined when running as an actual Chrome extension
+const isPreviewMode = !chrome?.runtime?.id;
 
 // State
 let bookmarkTree = [];
