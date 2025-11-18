@@ -3838,7 +3838,7 @@ async function updateCacheSizeDisplay() {
   const cacheSizeElement = document.getElementById('cacheSize');
   if (!cacheSizeElement) return;
 
-  const sizeKB = await calculateCacheSize();
+  const sizeKB = parseFloat(await calculateCacheSize());
 
   if (sizeKB === 0) {
     cacheSizeElement.textContent = 'Empty';
@@ -3848,7 +3848,7 @@ async function updateCacheSizeDisplay() {
     const sizeMB = (sizeKB / 1024).toFixed(2);
     cacheSizeElement.textContent = `${sizeMB} MB`;
   } else {
-    cacheSizeElement.textContent = `${sizeKB} KB`;
+    cacheSizeElement.textContent = `${sizeKB.toFixed(2)} KB`;
   }
 }
 
