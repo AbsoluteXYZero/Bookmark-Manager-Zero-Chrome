@@ -683,7 +683,7 @@ async function loadBookmarks() {
     saveStatuses(bookmarkTree);
 
     const tree = await chrome.bookmarks.getTree();
-    // Firefox returns root with children, we want the actual bookmark folders
+    // Chrome returns root with children, we want the actual bookmark folders
     bookmarkTree = tree[0].children || [];
 
     // Restore status data to reloaded bookmarks
@@ -1994,7 +1994,7 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
       return;
     }
 
-    // Move the bookmark using Firefox API
+    // Move the bookmark using Chrome API
     await chrome.bookmarks.move(draggedId, {
       parentId: targetParentId,
       index: newIndex
@@ -3393,7 +3393,7 @@ function generateBookmarkHTML(bookmarkTree) {
 `;
 
   // Process the bookmark tree
-  // Firefox bookmark tree has a root node, we want to export its children
+  // Chrome bookmark tree has a root node, we want to export its children
   if (bookmarkTree && bookmarkTree.length > 0) {
     const root = bookmarkTree[0];
     if (root.children) {
@@ -3461,8 +3461,8 @@ async function exportBookmarks() {
         `✓ Bookmarks exported as HTML!\n\n` +
         `File: ${filename}\n\n` +
         `This file can be imported into:\n` +
+        `• Chrome/Edge: Bookmarks → Bookmark manager → ⋮ → Import bookmarks\n` +
         `• Firefox: Bookmarks → Manage Bookmarks → Import and Backup → Import Bookmarks from HTML\n` +
-        `• Chrome/Edge: Bookmarks → Import bookmarks and settings\n` +
         `• Any browser that supports Netscape bookmark format`
       );
     } else {
@@ -3488,7 +3488,7 @@ async function findDuplicates() {
       // Use mock data in preview mode
       allBookmarks = getAllBookmarksFlat(bookmarkTree);
     } else {
-      // Get all bookmarks from Firefox
+      // Get all bookmarks from Chrome
       const tree = await chrome.bookmarks.getTree();
       allBookmarks = getAllBookmarksFlat(tree);
     }

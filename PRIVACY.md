@@ -4,13 +4,13 @@
 
 ## Overview
 
-Bookmark Manager Zero is a browser extension that provides a modern interface for managing your Firefox bookmarks. This privacy policy explains what data is collected, how it's used, and your privacy rights.
+Bookmark Manager Zero is a browser extension that provides a modern interface for managing your Chrome bookmarks. This privacy policy explains what data is collected, how it's used, and your privacy rights.
 
 ## Data Collection and Storage
 
 ### Local Data Storage
 
-All bookmark data and user preferences are stored **locally on your device** using Firefox's built-in storage API (`browser.storage.local`). This includes:
+All bookmark data and user preferences are stored **locally on your device** using Chrome's built-in storage API (`chrome.storage.local`). This includes:
 
 - User preferences (theme, view mode, zoom level)
 - Bookmark status cache (link availability and safety checks)
@@ -23,10 +23,10 @@ All bookmark data and user preferences are stored **locally on your device** usi
 
 ### Private Browsing Mode
 
-When using the extension in Firefox Private Browsing mode:
+When using the extension in Chrome Incognito mode:
 - All data is stored only in memory (RAM)
 - No data is written to disk
-- All session data is cleared when you close the private window
+- All session data is cleared when you close the incognito window
 - Settings and preferences do not persist across sessions
 
 ## External Services
@@ -120,9 +120,9 @@ If you choose to provide API keys for Google Safe Browsing or VirusTotal:
 The extension requests the following permissions:
 
 ### `bookmarks`
-- **Why:** Read and manage your Firefox bookmarks
+- **Why:** Read and manage your Chrome bookmarks
 - **What:** Access bookmark titles, URLs, folders, and metadata
-- **Scope:** All bookmarks in your Firefox profile
+- **Scope:** All bookmarks in your Chrome profile
 
 ### `storage`
 - **Why:** Save user preferences and cache data locally
@@ -161,21 +161,21 @@ We may update this privacy policy from time to time. Changes will be reflected i
 
 As the extension stores all data locally on your device:
 
-- **Right to Access:** You can view all stored data in Firefox DevTools → Storage
+- **Right to Access:** You can view all stored data in Chrome DevTools → Application → Storage
 - **Right to Delete:** Uninstall the extension or clear browser storage
-- **Right to Export:** Use Firefox's built-in export features
+- **Right to Export:** Use Chrome's built-in export features
 - **Right to Object:** Disable any feature in settings
 
 ## Contact
 
 For privacy concerns or questions:
-- **GitHub Issues:** https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero/issues
+- **GitHub Issues:** https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/issues
 - **Extension Developer:** AbsoluteXYZero
 
 ## Open Source
 
 This extension is open source. You can audit the code at:
-https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero
+https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome
 
 ## Summary
 
