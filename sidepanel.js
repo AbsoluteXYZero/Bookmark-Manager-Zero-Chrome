@@ -1129,8 +1129,8 @@ function createDropZone(parentId, targetIndex) {
 }
 
 // Recursively render bookmark nodes with drop zones between them
-function renderNodes(nodes, container, parentId = 'root________') {
-  const isRootLevel = (parentId === 'root________');
+function renderNodes(nodes, container, parentId = '0') {
+  const isRootLevel = (parentId === '0');
 
   nodes.forEach((node, index) => {
     // Add the actual item
@@ -1858,13 +1858,13 @@ async function handleDropToPosition(draggedId, targetParentId, targetIndex) {
 
     // Adjust target index if moving within same parent and from earlier position
     let adjustedIndex = targetIndex;
-    const isSameParent = (draggedParent?.id || 'root________') === targetParentId;
+    const isSameParent = (draggedParent?.id || '0') === targetParentId;
     if (isSameParent && draggedIndex < targetIndex) {
       adjustedIndex = targetIndex - 1;
     }
 
     // Insert item at the new location
-    if (targetParentId === 'root________') {
+    if (targetParentId === '0') {
       bookmarkTree.splice(adjustedIndex, 0, draggedItem);
     } else {
       const targetParent = findBookmarkById(bookmarkTree, targetParentId);
@@ -1880,7 +1880,7 @@ async function handleDropToPosition(draggedId, targetParentId, targetIndex) {
 
   try {
     await chrome.bookmarks.move(draggedId, {
-      parentId: targetParentId === 'root________' ? undefined : targetParentId,
+      parentId: targetParentId === '0' ? undefined : targetParentId,
       index: targetIndex
     });
 
