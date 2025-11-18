@@ -22,16 +22,17 @@ Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-r
 
 Other bookmark tools make you choose between organization OR security. Bookmark Manager Zero combines both:
 
-| Feature | Bookmark Manager Zero | [Bookmark Sidebar](https://chrome.google.com/webstore/detail/bookmark-sidebar/jdbnofccmhefkmjbkkdkfiicjkgofkdh) | [Sidebarr](https://chrome.google.com/webstore/detail/sidebarr/lknanmhbcjohhgfhgaaoopbalhfcpjnl) |
-|---------|:--------------------:|:------------------:|:-------------------:|
-| Modern bookmark UI | ✅ | ✅ | ✅ |
-| Dead link detection | ✅ | ❌ | ❌ |
-| Parked domain detection | ✅ | ❌ | ❌ |
-| Multi-source malware scanning | ✅ | ❌ | ❌ |
-| Safety indicators on bookmarks | ✅ | ❌ | ❌ |
-| Suspicious pattern detection | ✅ | ❌ | ❌ |
-| No tracking/analytics | ✅ | ❌ | ❌ |
-| Website previews | ✅ | ❌ | ❌ |
+| Feature | Bookmark Manager Zero | [Bookmark Sidebar](https://chromewebstore.google.com/detail/bookmark-sidebar/jdbnofccmhefkmjbkkdkfiicjkgofkdh) | [Sidebarr](https://chromewebstore.google.com/detail/sidebarr-bookmarks-apps-a/afdfpkhbdpioonfeknablodaejkklbdn) | [Meomni](https://chromewebstore.google.com/detail/sidebar-chatgpt-bookmarks/fnfdomooadjpfohbepiaonnbdmkdjiog) |
+|---------|:--------------------:|:------------------:|:-------------------:|:-------------------:|
+| Modern bookmark UI | ✅ | ✅ | ✅ | ✅ |
+| Dead link detection | ✅ | ✅ | ❌ | ❌ |
+| Parked domain detection | ✅ | ❌ | ❌ | ❌ |
+| Multi-source malware scanning | ✅ | ❌ | ❌ | ❌ |
+| Safety indicators on bookmarks | ✅ | ❌ | ❌ | ❌ |
+| Suspicious pattern detection | ✅ | ❌ | ❌ | ❌ |
+| No tracking/analytics | ✅ | ❌ | ❌ | ❌ |
+| Website previews | ✅ | ❌ | ❌ | ❌ |
+| Free (no premium upsell) | ✅ | ❌ | ✅ | ❌ |
 
 Stop blindly clicking old bookmarks. Know which links are dead, parked, or potentially dangerous before you visit them.
 
