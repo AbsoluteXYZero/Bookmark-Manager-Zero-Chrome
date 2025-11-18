@@ -18,7 +18,7 @@
       "16": "icons/bookmark-16.png",
       "32": "icons/bookmark-32.png",
       "48": "icons/bookmark-48.png",
-      "128": "icons/bookmark-128.png"
+      "96": "icons/bookmark-96.png"
     }
   },
   "side_panel": {
@@ -31,7 +31,7 @@
     "16": "icons/bookmark-16.png",
     "32": "icons/bookmark-32.png",
     "48": "icons/bookmark-48.png",
-    "128": "icons/bookmark-128.png"
+    "96": "icons/bookmark-96.png"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http:;"
