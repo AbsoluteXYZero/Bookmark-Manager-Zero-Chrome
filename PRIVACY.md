@@ -105,7 +105,7 @@ If you choose to provide API keys for Google Safe Browsing or VirusTotal:
 
 - Keys are **encrypted** using AES-256-GCM before storage
 - Encryption key is derived from your browser's unique fingerprint
-- Keys are stored in `browser.storage.local` (encrypted)
+- Keys are stored in `chrome.storage.local` (encrypted)
 - Keys are never transmitted except to the respective API services
 - In private browsing mode, keys are stored in memory only
 

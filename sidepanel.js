@@ -380,7 +380,7 @@ function releaseFocusTrap() {
 }
 
 // Check if running in preview mode (no browser API available)
-const isPreviewMode = typeof browser === 'undefined';
+const isPreviewMode = typeof chrome === 'undefined';
 
 // State
 let bookmarkTree = [];
