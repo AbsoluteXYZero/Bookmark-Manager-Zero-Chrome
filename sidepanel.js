@@ -380,7 +380,8 @@ function releaseFocusTrap() {
 }
 
 // Check if running in preview mode (no extension API available)
-const isPreviewMode = typeof chrome === 'undefined' || typeof chrome.bookmarks === 'undefined';
+// Use chrome.runtime to detect extension context since it's always available in extensions
+const isPreviewMode = typeof chrome === 'undefined' || typeof chrome.runtime === 'undefined';
 
 // State
 let bookmarkTree = [];
