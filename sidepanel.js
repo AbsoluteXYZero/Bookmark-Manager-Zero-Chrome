@@ -726,11 +726,11 @@ async function autoCheckBookmarkStatuses() {
   function traverse(nodes, parentExpanded = true) {
     nodes.forEach(node => {
       // Only check bookmarks if parent is expanded (or at root level)
-      if (parentExpanded && node.type === 'bookmark' && node.url && !node.linkStatus && !checkedBookmarks.has(node.id)) {
+      if (parentExpanded && node.url && !node.linkStatus && !checkedBookmarks.has(node.id)) {
         bookmarksToCheck.push(node);
       }
       // For folders, only traverse children if folder is expanded
-      if (node.type === 'folder' && node.children) {
+      if (node.children) {
         const isFolderExpanded = expandedFolders.has(node.id);
         traverse(node.children, isFolderExpanded);
       }
@@ -1135,7 +1135,7 @@ function renderNodes(nodes, container, parentId = '0') {
 
   nodes.forEach((node, index) => {
     // Add the actual item
-    if (node.type === 'folder') {
+    if (node.children) {
       container.appendChild(createFolderElement(node));
     } else if (node.url) {
       container.appendChild(createBookmarkElement(node));
@@ -2539,7 +2539,7 @@ async function recheckBookmarkStatus(bookmarkId) {
 function findBookmarkById(nodes, id) {
   for (const node of nodes) {
     if (node.id === id) return node;
-    if (node.type === 'folder' && node.children) {
+    if (node.children) {
       const found = findBookmarkById(node.children, id);
       if (found) return found;
     }
@@ -2554,7 +2554,7 @@ function updateBookmarkInTree(bookmarkId, updates) {
       if (node.id === bookmarkId) {
         return { ...node, ...updates };
       }
-      if (node.type === 'folder' && node.children) {
+      if (node.children) {
         return { ...node, children: updateNode(node.children) };
       }
       return node;
@@ -2947,15 +2947,13 @@ async function deleteBookmark(id) {
 function buildFolderList(nodes, indent = 0) {
   const folders = [];
   for (const node of nodes) {
-    if (node.type === 'folder') {
+    if (node.children) {
       folders.push({
         id: node.id,
         title: '  '.repeat(indent) + (node.title || 'Unnamed Folder'),
         indent
       });
-      if (node.children) {
-        folders.push(...buildFolderList(node.children, indent + 1));
-      }
+      folders.push(...buildFolderList(node.children, indent + 1));
     }
   }
   return folders;
@@ -3227,8 +3225,9 @@ async function createNewFolder() {
 // Filter and search bookmarks
 function filterAndSearchBookmarks(nodes) {
   return nodes.reduce((acc, node) => {
-    if (node.type === 'folder') {
-      const filteredChildren = filterAndSearchBookmarks(node.children || []);
+    if (node.children) {
+      // It's a folder
+      const filteredChildren = filterAndSearchBookmarks(node.children);
       if (filteredChildren.length > 0 || (!searchTerm && activeFilters.length === 0)) {
         acc.push({
           ...node,
@@ -3236,6 +3235,7 @@ function filterAndSearchBookmarks(nodes) {
         });
       }
     } else if (node.url) {
+      // It's a bookmark
       if (matchesSearch(node) && matchesFilter(node)) {
         acc.push(node);
       }
@@ -3969,13 +3969,13 @@ async function rescanAllBookmarks() {
     // Reset all bookmark statuses to unknown
     function resetBookmarkStatuses(nodes) {
       nodes.forEach(node => {
-        if (node.type === 'bookmark' && node.url) {
+        if (node.url) {
           updateBookmarkInTree(node.id, {
             linkStatus: 'unknown',
             safetyStatus: 'unknown'
           });
         }
-        if (node.type === 'folder' && node.children) {
+        if (node.children) {
           resetBookmarkStatuses(node.children);
         }
       });
@@ -4127,9 +4127,9 @@ function getAllBookmarksInFolder(folder) {
   const bookmarks = [];
 
   function traverse(node) {
-    if (node.type === 'bookmark') {
+    if (node.url) {
       bookmarks.push(node);
-    } else if (node.type === 'folder' && node.children) {
+    } else if (node.children) {
       node.children.forEach(child => traverse(child));
     }
   }
@@ -4146,11 +4146,9 @@ function getAllFolders(nodes, depth = 0) {
   const folders = [];
 
   nodes.forEach(node => {
-    if (node.type === 'folder') {
+    if (node.children) {
       folders.push({ ...node, depth });
-      if (node.children) {
-        folders.push(...getAllFolders(node.children, depth + 1));
-      }
+      folders.push(...getAllFolders(node.children, depth + 1));
     }
   });
 
