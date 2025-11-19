@@ -1920,7 +1920,7 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
     let targetParentId;
     let targetIndex;
 
-    if (dropInto && targetItem.type === 'folder') {
+    if (dropInto && targetItem.children) {
       // Dropping INTO a folder - item becomes child at index 0
       targetParentId = targetItem.id;
       targetIndex = 0;
@@ -1941,7 +1941,7 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
     }
 
     // Check if dropping a folder into itself or its descendants (prevent invalid moves)
-    if (draggedItem.type === 'folder' && targetParentId) {
+    if (draggedItem.children && targetParentId) {
       let currentParent = findBookmarkById(bookmarkTree, targetParentId);
       while (currentParent) {
         if (currentParent.id === draggedId) {
@@ -3307,7 +3307,7 @@ function countBookmarks(folder) {
   if (!folder.children) return 0;
 
   return folder.children.reduce((count, child) => {
-    if (child.type === 'folder') {
+    if (child.children) {
       return count + countBookmarks(child);
     } else if (child.url) {
       return count + 1;
@@ -4030,9 +4030,9 @@ async function bulkRecheckItems() {
   for (const itemId of itemsToRecheck) {
     const item = findBookmarkById(allBookmarks, itemId);
     if (item) {
-      if (item.type === 'bookmark') {
+      if (item.url) {
         bookmarksToRecheck.push(item);
-      } else if (item.type === 'folder') {
+      } else if (item.children) {
         // Get all bookmarks in folder recursively
         const folderBookmarks = getAllBookmarksInFolder(item);
         bookmarksToRecheck.push(...folderBookmarks);
