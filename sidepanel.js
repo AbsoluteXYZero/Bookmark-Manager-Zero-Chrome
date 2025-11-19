@@ -171,7 +171,6 @@ const safeStorage = {
       Object.entries(items).forEach(([key, value]) => {
         privateSessionStorage.set(key, value);
       });
-      console.log('[Private Mode] Data stored in session memory only (will not persist)');
       return;
     }
     // Normal mode: use chrome.storage.local
@@ -660,7 +659,6 @@ async function loadBookmarks() {
   if (isPreviewMode) {
     // Use mock data for preview
     bookmarkTree = getMockBookmarks();
-    console.log('Preview mode: Using mock bookmarks');
     return;
   }
 
@@ -702,7 +700,6 @@ async function loadBookmarks() {
     };
     bookmarkTree = restoreStatuses(bookmarkTree);
 
-    console.log('Loaded bookmarks:', bookmarkTree);
     // Clear checked bookmarks when loading fresh data
     checkedBookmarks.clear();
   } catch (error) {
@@ -716,7 +713,6 @@ async function loadBookmarks() {
 async function autoCheckBookmarkStatuses() {
   // Skip if both checking types are disabled
   if (!linkCheckingEnabled && !safetyCheckingEnabled) {
-    console.log('Link and safety checking are both disabled, skipping...');
     return;
   }
 
@@ -741,7 +737,6 @@ async function autoCheckBookmarkStatuses() {
 
   if (bookmarksToCheck.length === 0) return;
 
-  console.log(`Auto-checking ${bookmarksToCheck.length} bookmarks in batches...`);
 
   // Mark these bookmarks as being checked to prevent re-checking
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
@@ -753,7 +748,6 @@ async function autoCheckBookmarkStatuses() {
   for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
     // Check if scan was cancelled
     if (scanCancelled) {
-      console.log('Scan cancelled, stopping...');
       return;
     }
 
@@ -806,7 +800,6 @@ async function autoCheckBookmarkStatuses() {
       });
     });
 
-    console.log(`Checked batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(bookmarksToCheck.length / BATCH_SIZE)} (${results.length} bookmarks)`);
 
     // Wait before processing next batch (except for the last batch)
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
@@ -817,7 +810,6 @@ async function autoCheckBookmarkStatuses() {
   // Render once at the end of all batches
   renderBookmarks();
 
-  console.log(`Finished checking link status for ${bookmarksToCheck.length} bookmarks (safety checks disabled - use Test VT button)`);
 }
 
 // Mock bookmark data for preview mode
@@ -1112,7 +1104,6 @@ function createDropZone(parentId, targetIndex) {
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     dropZone.classList.add('drop-zone-active');
-    console.log('[DropZone] Dragover at index', targetIndex, 'in parent', parentId);
   });
 
   dropZone.addEventListener('dragleave', (e) => {
@@ -1128,7 +1119,6 @@ function createDropZone(parentId, targetIndex) {
     dropZone.classList.remove('drop-zone-active');
 
     const draggedId = e.dataTransfer.getData('text/plain');
-    console.log('[DropZone] Drop at index', targetIndex, 'in parent', parentId);
     await handleDropToPosition(draggedId, parentId, targetIndex);
   });
 
@@ -1805,7 +1795,6 @@ async function handleDropToRoot(draggedId) {
   }
 
   if (isPreviewMode) {
-    console.log(`Preview mode: Moving ${draggedId} to end of root`);
 
     // Get dragged item's current position
     const draggedParent = findParentById(bookmarkTree, draggedId);
@@ -1848,7 +1837,6 @@ async function handleDropToPosition(draggedId, targetParentId, targetIndex) {
   }
 
   if (isPreviewMode) {
-    console.log(`Preview mode: Moving ${draggedId} to index ${targetIndex} in parent ${targetParentId}`);
 
     // Get dragged item's current position
     const draggedParent = findParentById(bookmarkTree, draggedId);
@@ -1945,7 +1933,6 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
       let currentParent = findBookmarkById(bookmarkTree, targetParentId);
       while (currentParent) {
         if (currentParent.id === draggedId) {
-          console.log('Cannot drop folder into itself or its descendants');
           return;
         }
         currentParent = findParentById(bookmarkTree, currentParent.id);
@@ -1957,7 +1944,6 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
     if (isPreviewMode) {
       // In preview mode, actually move the item in the mock tree
       const dropType = dropInto ? 'into' : (dropBefore ? 'before' : 'after');
-      console.log(`Preview mode: Moving ${draggedId} ${dropType} ${targetId}`);
 
       // Get dragged item's current position
       const draggedParent = findParentById(bookmarkTree, draggedId);
@@ -1977,7 +1963,6 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
       let adjustedIndex = newIndex;
       if (isSameParent && !dropInto && newIndex > draggedIndex) {
         adjustedIndex = newIndex - 1;
-        console.log(`Preview mode: Adjusted index from ${newIndex} to ${adjustedIndex} (same parent move)`);
       }
 
       // Remove item from its current location
@@ -2326,7 +2311,6 @@ async function performUndo() {
 
       renderBookmarks();
       hideUndoToast();
-      console.log(`Undo successful (preview): ${type} restored`);
     } else {
       // Real extension mode
       if (type === 'bookmark') {
@@ -2347,7 +2331,6 @@ async function performUndo() {
       renderBookmarks();
       hideUndoToast();
 
-      console.log(`Undo successful: ${type} restored`);
     }
   } catch (error) {
     console.error('Error during undo:', error);
@@ -2619,7 +2602,6 @@ async function loadWhitelist() {
     const result = await safeStorage.get('whitelistedUrls');
     if (result.whitelistedUrls && Array.isArray(result.whitelistedUrls)) {
       whitelistedUrls = new Set(result.whitelistedUrls);
-      console.log(`Loaded ${whitelistedUrls.size} whitelisted URLs`);
     }
   } catch (error) {
     console.error('Failed to load whitelist:', error);
@@ -2643,7 +2625,6 @@ async function loadSafetyHistory() {
     const result = await safeStorage.get('safetyHistory');
     if (result.safetyHistory) {
       safetyHistory = result.safetyHistory;
-      console.log(`Loaded safety history for ${Object.keys(safetyHistory).length} URLs`);
     }
   } catch (error) {
     console.error('Failed to load safety history:', error);
@@ -2774,7 +2755,6 @@ async function handleBookmarkAction(action, bookmark) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
           await navigator.clipboard.writeText(bookmark.url);
           // Show brief success feedback
-          console.log('URL copied to clipboard:', bookmark.url);
           // Optional: Could show a toast notification here
         } else {
           // Fallback for older browsers
@@ -2786,7 +2766,6 @@ async function handleBookmarkAction(action, bookmark) {
           textArea.select();
           document.execCommand('copy');
           document.body.removeChild(textArea);
-          console.log('URL copied to clipboard (fallback):', bookmark.url);
         }
       } catch (error) {
         console.error('Error copying URL:', error);
@@ -3469,7 +3448,6 @@ async function exportBookmarks() {
         `File: ${filename}\n\n` +
         `This file can be imported into:\n` +
         `• Chrome/Edge: Bookmarks → Bookmark manager → ⋮ → Import bookmarks\n` +
-        `• Firefox: Bookmarks → Manage Bookmarks → Import and Backup → Import Bookmarks from HTML\n` +
         `• Any browser that supports Netscape bookmark format`
       );
     } else {
@@ -3766,7 +3744,6 @@ async function viewErrorLogs() {
     );
 
     if (action) {
-      console.log(logText);
       alert('Error logs have been printed to the browser console. Press F12 to view.');
     } else {
       // Clear logs
@@ -3922,7 +3899,6 @@ async function clearOldCacheEntries(maxAgeDays) {
     await safeStorage.set({ lastCacheClear: Date.now() });
 
     if (updated) {
-      console.log(`Cleared cache entries older than ${maxAgeDays} days`);
       await updateCacheSizeDisplay();
     }
   } catch (error) {
@@ -3940,7 +3916,6 @@ async function clearCache() {
     // Remove both cache keys from storage
     await safeStorage.remove(['linkStatusCache', 'safetyStatusCache']);
 
-    console.log('Cache cleared successfully');
     alert('Cache cleared! All bookmark checks will be refreshed on next scan.');
 
     // Update cache size display
@@ -3960,7 +3935,6 @@ async function rescanAllBookmarks() {
 
   try {
     // Cancel any ongoing scan first
-    console.log('Cancelling any ongoing scan...');
     scanCancelled = true;
 
     // Wait a moment for the scan to stop
@@ -3990,13 +3964,11 @@ async function rescanAllBookmarks() {
     resetBookmarkStatuses(bookmarkTree);
     renderBookmarks();
 
-    console.log('Starting fresh rescan of all bookmarks...');
 
     // Reset the cancel flag and start new scan
     scanCancelled = false;
     await autoCheckBookmarkStatuses();
 
-    console.log('Rescan complete!');
   } catch (error) {
     console.error('Error rescanning bookmarks:', error);
     alert('Failed to rescan bookmarks. Please try again.');
@@ -4332,7 +4304,6 @@ function setupEventListeners() {
   autoClearCacheSelect.addEventListener('change', async (e) => {
     const autoClearDays = e.target.value;
     await safeStorage.set({ autoClearCacheDays: autoClearDays });
-    console.log(`Auto-clear cache set to: ${autoClearDays === 'never' ? 'Never' : autoClearDays + ' days'}`);
 
     // Run auto-clear immediately if enabled
     if (autoClearDays !== 'never') {
@@ -4345,7 +4316,6 @@ function setupEventListeners() {
   enableLinkCheckingToggle.addEventListener('change', (e) => {
     linkCheckingEnabled = e.target.checked;
     localStorage.setItem('linkCheckingEnabled', linkCheckingEnabled);
-    console.log(`Link checking ${linkCheckingEnabled ? 'enabled' : 'disabled'}`);
   });
 
   // Safety checking toggle
@@ -4353,7 +4323,6 @@ function setupEventListeners() {
   enableSafetyCheckingToggle.addEventListener('change', (e) => {
     safetyCheckingEnabled = e.target.checked;
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
-    console.log(`Safety checking ${safetyCheckingEnabled ? 'enabled' : 'disabled'}`);
   });
 
   // Rescan all bookmarks
@@ -4582,10 +4551,8 @@ function setupEventListeners() {
       clearTimeout(syncTimeout);
       syncTimeout = setTimeout(async () => {
         try {
-          console.log(`[Bookmark Sync] ${eventType} - Syncing bookmarks from Chrome...`);
           await loadBookmarks();
           renderBookmarks();
-          console.log('[Bookmark Sync] ✓ Sync complete');
         } catch (error) {
           console.error('[Bookmark Sync] Failed to sync:', error);
         }
@@ -4593,26 +4560,21 @@ function setupEventListeners() {
     };
 
     chrome.bookmarks.onCreated.addListener((id, bookmark) => {
-      console.log('[Bookmark Sync] Bookmark created:', bookmark.title || bookmark.url);
       syncBookmarks('onCreated');
     });
 
     chrome.bookmarks.onRemoved.addListener((id, removeInfo) => {
-      console.log('[Bookmark Sync] Bookmark removed:', id);
       syncBookmarks('onRemoved');
     });
 
     chrome.bookmarks.onChanged.addListener((id, changeInfo) => {
-      console.log('[Bookmark Sync] Bookmark changed:', changeInfo);
       syncBookmarks('onChanged');
     });
 
     chrome.bookmarks.onMoved.addListener((id, moveInfo) => {
-      console.log('[Bookmark Sync] Bookmark moved:', id);
       syncBookmarks('onMoved');
     });
 
-    console.log('[Bookmark Sync] ✓ Real-time bidirectional sync enabled');
   }
 
   // Multi-select toggle button

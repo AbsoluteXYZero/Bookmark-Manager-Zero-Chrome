@@ -146,7 +146,6 @@ const checkLinkStatus = async (url) => {
   // Check cache first
   const cached = await getCachedResult(url, 'linkStatusCache');
   if (cached) {
-    console.log(`[Link Check] Using cached result for ${url}: ${cached}`);
     return cached;
   }
 
@@ -257,11 +256,9 @@ const checkGoogleSafeBrowsing = async (url) => {
     const apiKey = await getDecryptedApiKey('googleSafeBrowsingApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
-      console.log(`[Google SB] API key not configured, skipping`);
       return 'unknown';
     }
 
-    console.log(`[Google SB] Checking ${url}...`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -300,11 +297,9 @@ const checkGoogleSafeBrowsing = async (url) => {
 
     // If matches found, URL is unsafe
     if (data.matches && data.matches.length > 0) {
-      console.log(`[Google SB] ⚠️ Threat detected:`, data.matches[0].threatType);
       return 'unsafe';
     }
 
-    console.log(`[Google SB] ✓ No threats found`);
     return 'safe';
 
   } catch (error) {
@@ -323,11 +318,9 @@ const checkVirusTotal = async (url) => {
     const apiKey = await getDecryptedApiKey('virusTotalApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
-      console.log(`[VirusTotal] API key not configured, skipping`);
       return 'unknown';
     }
 
-    console.log(`[VirusTotal] Checking ${url}...`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -398,21 +391,17 @@ const checkVirusTotal = async (url) => {
     const malicious = stats.malicious || 0;
     const suspicious = stats.suspicious || 0;
 
-    console.log(`[VirusTotal] Results: ${malicious} malicious, ${suspicious} suspicious`);
 
     // If 2 or more engines flag as malicious, mark as unsafe
     if (malicious >= 2) {
-      console.log(`[VirusTotal] ⚠️ Threat detected by ${malicious} engines`);
       return 'unsafe';
     }
 
     // If flagged by 1 engine or suspicious, mark as warning
     if (malicious >= 1 || suspicious >= 2) {
-      console.log(`[VirusTotal] ⚠ Warning: flagged by some engines`);
       return 'warning';
     }
 
-    console.log(`[VirusTotal] ✓ No threats found`);
     return 'safe';
 
   } catch (error) {
@@ -469,7 +458,6 @@ const downloadBlocklistSource = async (source) => {
   const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
   try {
-    console.log(`[Blocklist] Downloading ${source.name}...`);
 
     const response = await fetch(source.url, {
       signal: controller.signal
@@ -493,7 +481,6 @@ const downloadBlocklistSource = async (source) => {
       }
     }
 
-    console.log(`[Blocklist] ${source.name}: ${domains.length} domains loaded`);
     return { domains, count: domains.length };
 
   } catch (error) {
@@ -506,7 +493,6 @@ const downloadBlocklistSource = async (source) => {
 // Download and aggregate all blocklist sources
 const updateBlocklistDatabase = async () => {
   try {
-    console.log(`[Blocklist] Starting update from ${BLOCKLIST_SOURCES.length} sources...`);
 
     // Clear existing data
     maliciousUrlsSet.clear();
@@ -541,8 +527,6 @@ const updateBlocklistDatabase = async () => {
 
     blocklistLastUpdate = Date.now();
 
-    console.log(`[Blocklist] ✓ Database updated: ${maliciousUrlsSet.size} unique domains from ${totalCount} total entries`);
-    console.log(`[Blocklist] Sources: URLhaus + BlockList Project (Malware, Phishing, Scam)`);
 
     // Store update timestamp
     await chrome.storage.local.set({
@@ -608,12 +592,10 @@ const checkURLSafety = async (url) => {
   // Check cache first
   const cached = await getCachedResult(url, 'safetyStatusCache');
   if (cached) {
-    console.log(`[Safety Check] Using cached result for ${url}: ${cached}`);
     // Cached results are old format (string only), return with empty sources
     return { status: cached, sources: [] };
   }
 
-  console.log(`[Safety Check] Starting safety check for ${url}`);
 
   let result;
 
@@ -621,16 +603,13 @@ const checkURLSafety = async (url) => {
     // Update database if needed (once per 24 hours)
     const now = Date.now();
     if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL) {
-      console.log(`[Blocklist] Database is stale, updating...`);
       await updateBlocklistDatabase();
     }
 
     // If database is empty, try to load it
     if (maliciousUrlsSet.size === 0) {
-      console.log(`[Blocklist] Database empty, loading...`);
       const success = await updateBlocklistDatabase();
       if (!success) {
-        console.log(`[Blocklist] Could not load database, returning unknown`);
         result = 'unknown';
         await setCachedResult(url, result, 'safetyStatusCache');
         return result;
@@ -645,16 +624,11 @@ const checkURLSafety = async (url) => {
     // Extract domain (hostname with port, no path)
     const domain = normalizedUrl.split('/')[0];
 
-    console.log(`[Blocklist] Checking full URL: ${normalizedUrl}`);
-    console.log(`[Blocklist] Checking domain: ${domain}`);
 
     // Check if full URL is in the malicious set
     if (maliciousUrlsSet.has(normalizedUrl)) {
       const sources = domainSourceMap.get(normalizedUrl) || [];
-      console.log(`[Blocklist] ⚠️ Full URL found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
       result = 'unsafe';
-      console.log(`[Safety Check] Final result for ${url}: ${result}`);
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources };
     }
@@ -662,15 +636,11 @@ const checkURLSafety = async (url) => {
     // Also check if just the domain is flagged (entire domain compromised)
     if (maliciousUrlsSet.has(domain)) {
       const sources = domainSourceMap.get(domain) || [];
-      console.log(`[Blocklist] ⚠️ Domain found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
       result = 'unsafe';
-      console.log(`[Safety Check] Final result for ${url}: ${result}`);
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources };
     }
 
-    console.log(`[Blocklist] ✓ Neither full URL nor domain found in malicious database`);
 
     // Blocklists say safe - check Google Safe Browsing and VirusTotal as redundancy if API keys are configured
     const storage = await chrome.storage.local.get(['googleSafeBrowsingApiKey', 'virusTotalApiKey']);
@@ -679,11 +649,9 @@ const checkURLSafety = async (url) => {
 
     // Check Google Safe Browsing
     if (hasGoogleKey) {
-      console.log(`[Safety Check] Blocklists say safe, checking Google Safe Browsing as redundancy...`);
       const googleResult = await checkGoogleSafeBrowsing(url);
 
       if (googleResult === 'unsafe') {
-        console.log(`[Safety Check] Google Safe Browsing flagged URL as unsafe!`);
         result = 'unsafe';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['Google Safe Browsing'] };
@@ -692,16 +660,13 @@ const checkURLSafety = async (url) => {
 
     // Check VirusTotal
     if (hasVTKey) {
-      console.log(`[Safety Check] Blocklists say safe, checking VirusTotal...`);
       const vtResult = await checkVirusTotal(url);
 
       if (vtResult === 'unsafe') {
-        console.log(`[Safety Check] VirusTotal flagged URL as unsafe!`);
         result = 'unsafe';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['VirusTotal'] };
       } else if (vtResult === 'warning') {
-        console.log(`[Safety Check] VirusTotal flagged URL as suspicious!`);
         result = 'warning';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['VirusTotal'] };
@@ -711,7 +676,6 @@ const checkURLSafety = async (url) => {
     // Not malicious, but check for suspicious patterns
     const suspiciousPatterns = checkSuspiciousPatterns(url, domain);
     if (suspiciousPatterns.length > 0) {
-      console.log(`[Safety Check] Suspicious patterns detected: ${suspiciousPatterns.join(', ')}`);
       result = 'warning';
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources: suspiciousPatterns };
@@ -719,7 +683,6 @@ const checkURLSafety = async (url) => {
 
     // Both checks passed (or Google SB not configured) and no suspicious patterns
     result = 'safe';
-    console.log(`[Safety Check] Final result for ${url}: ${result}`);
     await setCachedResult(url, result, 'safetyStatusCache');
     return { status: result, sources: [] };
 
