@@ -726,9 +726,12 @@ function updateTotalBookmarkCount() {
   let count = 0;
   function countBookmarksRecursive(nodes) {
     nodes.forEach(node => {
-      if (node.type === 'bookmark' && node.url) {
+      if (node.url) {
+        // Chrome bookmarks have url property (no type field)
         count++;
-      } else if (node.type === 'folder' && node.children) {
+      }
+      if (node.children) {
+        // Chrome folders have children property
         countBookmarksRecursive(node.children);
       }
     });
