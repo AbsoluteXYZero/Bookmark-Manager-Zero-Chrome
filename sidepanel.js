@@ -1501,12 +1501,13 @@ function createBookmarkElement(bookmark) {
   const safetySources = bookmark.safetySources || [];
 
   // Build status indicators HTML based on display options
+  // Shield (safety) on top, chain (link status) on bottom
   let statusIndicatorsHtml = '';
-  if (displayOptions.liveStatus) {
-    statusIndicatorsHtml += getStatusDotHtml(linkStatus);
-  }
   if (displayOptions.safetyStatus) {
     statusIndicatorsHtml += getShieldHtml(safetyStatus, bookmark.url, safetySources);
+  }
+  if (displayOptions.liveStatus) {
+    statusIndicatorsHtml += getStatusDotHtml(linkStatus);
   }
 
   // Build favicon HTML based on display options
