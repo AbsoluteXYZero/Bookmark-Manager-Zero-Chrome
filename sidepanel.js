@@ -1081,8 +1081,11 @@ function renderBookmarks() {
     dropZone.classList.add('drop-active');
   });
 
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drop-active');
+  dropZone.addEventListener('dragleave', (e) => {
+    // Only remove class if we're actually leaving the drop zone
+    if (!dropZone.contains(e.relatedTarget)) {
+      dropZone.classList.remove('drop-active');
+    }
   });
 
   dropZone.addEventListener('drop', async (e) => {
@@ -1112,8 +1115,11 @@ function createDropZone(parentId, targetIndex) {
     console.log('[DropZone] Dragover at index', targetIndex, 'in parent', parentId);
   });
 
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drop-zone-active');
+  dropZone.addEventListener('dragleave', (e) => {
+    // Only remove class if we're actually leaving the drop zone, not moving to a child
+    if (!dropZone.contains(e.relatedTarget)) {
+      dropZone.classList.remove('drop-zone-active');
+    }
   });
 
   dropZone.addEventListener('drop', async (e) => {
