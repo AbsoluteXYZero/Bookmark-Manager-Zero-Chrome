@@ -272,6 +272,47 @@
       scroll-behavior: smooth;
     }
 
+    /* Scan Status Bar */
+    .scan-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 8px;
+      background: var(--md-sys-color-surface-variant);
+      border-top: 1px solid var(--md-sys-color-outline-variant);
+      font-size: 9px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .scan-status-bar .status-text {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .scan-status-bar .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--md-sys-color-outline);
+      color: var(--md-sys-color-surface);
+      font-size: 7px;
+      font-weight: bold;
+      cursor: help;
+      margin-left: 3px;
+    }
+
+    .scan-status-bar .scan-progress {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .scan-status-bar.scanning .scan-progress {
+      color: var(--md-sys-color-primary);
+    }
+
     /* Bookmark Item Styles */
     .bookmark-item {
       background: var(--md-sys-color-surface-container);
@@ -565,10 +606,10 @@
     }
 
     .bookmark-favicon {
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
       flex-shrink: 0;
-      border-radius: 2px;
+      border-radius: 3px;
       object-fit: contain;
     }
 
@@ -1920,6 +1961,15 @@
     <div style="text-align: center; padding: 40px 20px; color: var(--md-sys-color-on-surface-variant);">
       <div style="font-size: 14px;">Loading bookmarks...</div>
     </div>
+  </div>
+
+  <!-- Scan Status Bar -->
+  <div class="scan-status-bar" id="scanStatusBar">
+    <div class="status-text">
+      <span class="scan-progress" id="scanProgress">Ready</span>
+      <span class="info-icon" title="Scans bookmarks on-demand as you expand folders&#10;Scans 5 bookmarks every 300ms">i</span>
+    </div>
+    <div class="total-count" id="totalCount">0 bookmarks</div>
   </div>
 
   <!-- Edit Modal -->

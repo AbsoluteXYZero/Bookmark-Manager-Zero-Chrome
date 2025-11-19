@@ -460,6 +460,11 @@ const undoButton = document.getElementById('undoButton');
 const undoCountdownEl = document.getElementById('undoCountdown');
 const undoDismiss = document.getElementById('undoDismiss');
 
+// Scan status bar DOM elements
+const scanStatusBar = document.getElementById('scanStatusBar');
+const scanProgress = document.getElementById('scanProgress');
+const totalCount = document.getElementById('totalCount');
+
 // Initialize
 async function init() {
   // Force update logo title to bypass cache
@@ -705,10 +710,32 @@ async function loadBookmarks() {
 
     // Clear checked bookmarks when loading fresh data
     checkedBookmarks.clear();
+
+    // Update total bookmark count in status bar
+    updateTotalBookmarkCount();
   } catch (error) {
     console.error('Error loading bookmarks:', error);
     showError('Failed to load bookmarks');
   }
+}
+
+// Update total bookmark count in status bar
+function updateTotalBookmarkCount() {
+  if (!totalCount) return;
+
+  let count = 0;
+  function countBookmarksRecursive(nodes) {
+    nodes.forEach(node => {
+      if (node.type === 'bookmark' && node.url) {
+        count++;
+      } else if (node.type === 'folder' && node.children) {
+        countBookmarksRecursive(node.children);
+      }
+    });
+  }
+
+  countBookmarksRecursive(bookmarkTree);
+  totalCount.textContent = count + ' bookmark' + (count !== 1 ? 's' : '');
 }
 
 // Automatically check bookmark statuses for unchecked bookmarks
@@ -740,6 +767,10 @@ async function autoCheckBookmarkStatuses() {
 
   if (bookmarksToCheck.length === 0) return;
 
+  // Update status bar to show scanning
+  const totalToScan = bookmarksToCheck.length;
+  if (scanStatusBar) scanStatusBar.classList.add('scanning');
+  if (scanProgress) scanProgress.textContent = 'Scanning: 0/' + totalToScan;
 
   // Mark these bookmarks as being checked to prevent re-checking
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
@@ -747,6 +778,7 @@ async function autoCheckBookmarkStatuses() {
   // Process bookmarks in batches to prevent browser overload
   const BATCH_SIZE = 5; // Check 5 bookmarks at a time
   const BATCH_DELAY = 1000; // 1 second delay between batches
+  let scannedCount = 0;
 
   for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
     // Check if scan was cancelled
@@ -803,6 +835,9 @@ async function autoCheckBookmarkStatuses() {
       });
     });
 
+    // Update progress in status bar
+    scannedCount += batch.length;
+    if (scanProgress) scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan;
 
     // Wait before processing next batch (except for the last batch)
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
@@ -812,6 +847,10 @@ async function autoCheckBookmarkStatuses() {
 
   // Render once at the end of all batches
   renderBookmarks();
+
+  // Update status bar to show completion
+  if (scanProgress) scanProgress.textContent = 'Scan complete';
+  if (scanStatusBar) scanStatusBar.classList.remove('scanning');
 
 }
 
