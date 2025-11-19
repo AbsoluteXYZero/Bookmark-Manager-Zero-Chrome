@@ -403,7 +403,7 @@ let displayOptions = {
   favicon: true
 };
 let currentEditItem = null;
-let zoomLevel = 100;
+let zoomLevel = 80;
 let checkedBookmarks = new Set(); // Track which bookmarks have been checked to prevent infinite loops
 let scanCancelled = false; // Flag to cancel ongoing scans
 let linkCheckingEnabled = true; // Toggle for link checking
@@ -603,13 +603,13 @@ function setView(newView) {
 // Load zoom preference
 function loadZoom() {
   if (isPreviewMode) {
-    zoomLevel = 100;
+    zoomLevel = 80;
     applyZoom();
     return;
   }
 
   safeStorage.get('zoomLevel').then(result => {
-    zoomLevel = result.zoomLevel || 100;
+    zoomLevel = result.zoomLevel || 80;
     applyZoom();
     updateZoomDisplay();
   });
