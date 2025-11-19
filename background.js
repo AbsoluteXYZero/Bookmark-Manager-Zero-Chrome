@@ -180,87 +180,8 @@ const checkLinkStatus = async (url) => {
     clearTimeout(timeoutId);
 
     // no-cors mode returns opaque response, but successful fetch means site is reachable
-    // Try to check for parking indicators with a separate request (might fail due to CORS, that's ok)
-    try {
-      const contentController = new AbortController();
-      const contentTimeout = setTimeout(() => contentController.abort(), 3000); // Short 3s timeout
-
-      const contentResponse = await fetch(url, {
-        method: 'GET',
-        signal: contentController.signal,
-        mode: 'cors',
-        credentials: 'omit',
-        redirect: 'follow'
-      });
-      clearTimeout(contentTimeout);
-
-      // Check if redirected to parking domain
-      if (contentResponse.redirected || contentResponse.url !== url) {
-        const finalHost = new URL(contentResponse.url).hostname.toLowerCase();
-        if (PARKING_DOMAINS.some(domain => finalHost.includes(domain))) {
-          result = 'parked';
-          await setCachedResult(url, result, 'linkStatusCache');
-          return result;
-        }
-      }
-
-      // Only check content if we got a successful response
-      if (contentResponse.ok) {
-        const html = await contentResponse.text();
-        const htmlLower = html.toLowerCase();
-
-        // Check for parking page indicators
-        const parkingIndicators = [
-          'domain for sale',
-          'buy this domain',
-          'domain is for sale',
-          'this domain may be for sale',
-          'this domain is for sale',
-          'premium domain',
-          'parked free',
-          'domain parking',
-          'parked domain',
-          'buy now',
-          'make an offer',
-          'make offer',
-          'expired domain',
-          'domain expired',
-          'register this domain',
-          'purchase this domain',
-          'acquire this domain',
-          'get this domain',
-          'domain is parked',
-          'parking page',
-          'coming soon',
-          'under construction',
-          'sedo domain parking',
-          'sedo.com',
-          'afternic.com/forsale',
-          'afternic.com',
-          'hugedomains.com',
-          'bodis.com',
-          'parkingcrew',
-          'domain name is for sale',
-          'inquire about this domain',
-          'interested in this domain',
-          'domain may be for sale',
-          'brandable domain',
-          'premium domains',
-          'domain broker'
-        ];
-
-        if (parkingIndicators.some(indicator => htmlLower.includes(indicator))) {
-          result = 'parked';
-          await setCachedResult(url, result, 'linkStatusCache');
-          return result;
-        }
-      }
-    } catch (contentError) {
-      // CORS errors are expected for many sites - silently continue
-      // The no-cors HEAD succeeded, so the site is reachable
-    }
-
-    // Site is reachable (no-cors HEAD succeeded), and either no parking indicators or CORS blocked content check
+    // Parking detection is handled by domain check above - no need for content check
+    // which would cause CORS errors for many sites
     result = 'live';
     await setCachedResult(url, result, 'linkStatusCache');
     return result;
