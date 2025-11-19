@@ -146,7 +146,6 @@ const checkLinkStatus = async (url) => {
   // Check cache first
   const cached = await getCachedResult(url, 'linkStatusCache');
   if (cached) {
-    console.log(`[Link Check] Using cached result for ${url}: ${cached}`);
     return cached;
   }
 
@@ -169,106 +168,20 @@ const checkLinkStatus = async (url) => {
 
   try {
     // Try HEAD request first (lighter weight)
+    // Use no-cors mode to avoid CORS errors for sites that block cross-origin requests
     const response = await fetch(url, {
       method: 'HEAD',
       signal: controller.signal,
-      mode: 'cors',
+      mode: 'no-cors',
       credentials: 'omit',
       redirect: 'follow'
     });
     clearTimeout(timeoutId);
 
-    // Check if redirected to parking domain
-    if (response.redirected || response.url !== url) {
-      const finalHost = new URL(response.url).hostname.toLowerCase();
-      if (PARKING_DOMAINS.some(domain => finalHost.includes(domain))) {
-        result = 'parked';
-        await setCachedResult(url, result, 'linkStatusCache');
-        return result;
-      }
-    }
-
-    // Check for successful status codes
-    if (response.ok || (response.status >= 300 && response.status < 400)) {
-      // Try lightweight content check for parking indicators (with robust error handling)
-      try {
-        const contentController = new AbortController();
-        const contentTimeout = setTimeout(() => contentController.abort(), 3000); // Short 3s timeout
-
-        const contentResponse = await fetch(url, {
-          method: 'GET',
-          signal: contentController.signal,
-          mode: 'cors',
-          credentials: 'omit',
-          redirect: 'follow'
-        });
-        clearTimeout(contentTimeout);
-
-        // Only check if we got a successful response
-        if (contentResponse.ok) {
-          const html = await contentResponse.text();
-          const htmlLower = html.toLowerCase();
-
-          // Check for parking page indicators
-          const parkingIndicators = [
-            'domain for sale',
-            'buy this domain',
-            'domain is for sale',
-            'this domain may be for sale',
-            'this domain is for sale',
-            'premium domain',
-            'parked free',
-            'domain parking',
-            'parked domain',
-            'buy now',
-            'make an offer',
-            'make offer',
-            'expired domain',
-            'domain expired',
-            'register this domain',
-            'purchase this domain',
-            'acquire this domain',
-            'get this domain',
-            'domain is parked',
-            'parking page',
-            'coming soon',
-            'under construction',
-            'sedo domain parking',
-            'sedo.com',
-            'afternic.com/forsale',
-            'afternic.com',
-            'hugedomains.com',
-            'bodis.com',
-            'parkingcrew',
-            'domain name is for sale',
-            'inquire about this domain',
-            'interested in this domain',
-            'domain may be for sale',
-            'brandable domain',
-            'premium domains',
-            'domain broker'
-          ];
-
-          if (parkingIndicators.some(indicator => htmlLower.includes(indicator))) {
-            result = 'parked';
-            await setCachedResult(url, result, 'linkStatusCache');
-            return result;
-          }
-        }
-      } catch (contentError) {
-        // Log CORS and other errors for debugging parking detection issues
-        console.log(`[Parking Check] Content fetch failed for ${url}:`, contentError.message);
-        // Silently continue - don't break link checking
-      }
-
-      // If content check didn't find parking indicators (or failed), return live
-      result = 'live';
-      await setCachedResult(url, result, 'linkStatusCache');
-      return result;
-    }
-
-    // 4xx or 5xx error means the link is dead
-    result = 'dead';
+    // no-cors mode returns opaque response, but successful fetch means site is reachable
+    // Parking detection is handled by domain check above - no need for content check
+    // which would cause CORS errors for many sites
+    result = 'live';
     await setCachedResult(url, result, 'linkStatusCache');
     return result;
 
@@ -343,11 +256,9 @@ const checkGoogleSafeBrowsing = async (url) => {
     const apiKey = await getDecryptedApiKey('googleSafeBrowsingApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
-      console.log(`[Google SB] API key not configured, skipping`);
       return 'unknown';
     }
 
-    console.log(`[Google SB] Checking ${url}...`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -386,11 +297,9 @@ const checkGoogleSafeBrowsing = async (url) => {
 
     // If matches found, URL is unsafe
     if (data.matches && data.matches.length > 0) {
-      console.log(`[Google SB] ⚠️ Threat detected:`, data.matches[0].threatType);
       return 'unsafe';
     }
 
-    console.log(`[Google SB] ✓ No threats found`);
     return 'safe';
 
   } catch (error) {
@@ -409,11 +318,9 @@ const checkVirusTotal = async (url) => {
     const apiKey = await getDecryptedApiKey('virusTotalApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
-      console.log(`[VirusTotal] API key not configured, skipping`);
       return 'unknown';
     }
 
-    console.log(`[VirusTotal] Checking ${url}...`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -484,21 +391,17 @@ const checkVirusTotal = async (url) => {
     const malicious = stats.malicious || 0;
     const suspicious = stats.suspicious || 0;
 
-    console.log(`[VirusTotal] Results: ${malicious} malicious, ${suspicious} suspicious`);
 
     // If 2 or more engines flag as malicious, mark as unsafe
     if (malicious >= 2) {
-      console.log(`[VirusTotal] ⚠️ Threat detected by ${malicious} engines`);
       return 'unsafe';
     }
 
     // If flagged by 1 engine or suspicious, mark as warning
     if (malicious >= 1 || suspicious >= 2) {
-      console.log(`[VirusTotal] ⚠ Warning: flagged by some engines`);
       return 'warning';
     }
 
-    console.log(`[VirusTotal] ✓ No threats found`);
     return 'safe';
 
   } catch (error) {
@@ -555,7 +458,6 @@ const downloadBlocklistSource = async (source) => {
   const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
   try {
-    console.log(`[Blocklist] Downloading ${source.name}...`);
 
     const response = await fetch(source.url, {
       signal: controller.signal
@@ -579,7 +481,6 @@ const downloadBlocklistSource = async (source) => {
       }
     }
 
-    console.log(`[Blocklist] ${source.name}: ${domains.length} domains loaded`);
     return { domains, count: domains.length };
 
   } catch (error) {
@@ -592,7 +493,6 @@ const downloadBlocklistSource = async (source) => {
 // Download and aggregate all blocklist sources
 const updateBlocklistDatabase = async () => {
   try {
-    console.log(`[Blocklist] Starting update from ${BLOCKLIST_SOURCES.length} sources...`);
 
     // Clear existing data
     maliciousUrlsSet.clear();
@@ -627,8 +527,6 @@ const updateBlocklistDatabase = async () => {
 
     blocklistLastUpdate = Date.now();
 
-    console.log(`[Blocklist] ✓ Database updated: ${maliciousUrlsSet.size} unique domains from ${totalCount} total entries`);
-    console.log(`[Blocklist] Sources: URLhaus + BlockList Project (Malware, Phishing, Scam)`);
 
     // Store update timestamp
     await chrome.storage.local.set({
@@ -694,12 +592,10 @@ const checkURLSafety = async (url) => {
   // Check cache first
   const cached = await getCachedResult(url, 'safetyStatusCache');
   if (cached) {
-    console.log(`[Safety Check] Using cached result for ${url}: ${cached}`);
     // Cached results are old format (string only), return with empty sources
     return { status: cached, sources: [] };
   }
 
-  console.log(`[Safety Check] Starting safety check for ${url}`);
 
   let result;
 
@@ -707,16 +603,13 @@ const checkURLSafety = async (url) => {
     // Update database if needed (once per 24 hours)
     const now = Date.now();
     if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL) {
-      console.log(`[Blocklist] Database is stale, updating...`);
       await updateBlocklistDatabase();
     }
 
     // If database is empty, try to load it
     if (maliciousUrlsSet.size === 0) {
-      console.log(`[Blocklist] Database empty, loading...`);
       const success = await updateBlocklistDatabase();
       if (!success) {
-        console.log(`[Blocklist] Could not load database, returning unknown`);
         result = 'unknown';
         await setCachedResult(url, result, 'safetyStatusCache');
         return result;
@@ -731,16 +624,11 @@ const checkURLSafety = async (url) => {
     // Extract domain (hostname with port, no path)
     const domain = normalizedUrl.split('/')[0];
 
-    console.log(`[Blocklist] Checking full URL: ${normalizedUrl}`);
-    console.log(`[Blocklist] Checking domain: ${domain}`);
 
     // Check if full URL is in the malicious set
     if (maliciousUrlsSet.has(normalizedUrl)) {
       const sources = domainSourceMap.get(normalizedUrl) || [];
-      console.log(`[Blocklist] ⚠️ Full URL found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
       result = 'unsafe';
-      console.log(`[Safety Check] Final result for ${url}: ${result}`);
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources };
     }
@@ -748,15 +636,11 @@ const checkURLSafety = async (url) => {
     // Also check if just the domain is flagged (entire domain compromised)
     if (maliciousUrlsSet.has(domain)) {
       const sources = domainSourceMap.get(domain) || [];
-      console.log(`[Blocklist] ⚠️ Domain found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
       result = 'unsafe';
-      console.log(`[Safety Check] Final result for ${url}: ${result}`);
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources };
     }
 
-    console.log(`[Blocklist] ✓ Neither full URL nor domain found in malicious database`);
 
     // Blocklists say safe - check Google Safe Browsing and VirusTotal as redundancy if API keys are configured
     const storage = await chrome.storage.local.get(['googleSafeBrowsingApiKey', 'virusTotalApiKey']);
@@ -765,11 +649,9 @@ const checkURLSafety = async (url) => {
 
     // Check Google Safe Browsing
     if (hasGoogleKey) {
-      console.log(`[Safety Check] Blocklists say safe, checking Google Safe Browsing as redundancy...`);
       const googleResult = await checkGoogleSafeBrowsing(url);
 
       if (googleResult === 'unsafe') {
-        console.log(`[Safety Check] Google Safe Browsing flagged URL as unsafe!`);
         result = 'unsafe';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['Google Safe Browsing'] };
@@ -778,16 +660,13 @@ const checkURLSafety = async (url) => {
 
     // Check VirusTotal
     if (hasVTKey) {
-      console.log(`[Safety Check] Blocklists say safe, checking VirusTotal...`);
       const vtResult = await checkVirusTotal(url);
 
       if (vtResult === 'unsafe') {
-        console.log(`[Safety Check] VirusTotal flagged URL as unsafe!`);
         result = 'unsafe';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['VirusTotal'] };
       } else if (vtResult === 'warning') {
-        console.log(`[Safety Check] VirusTotal flagged URL as suspicious!`);
         result = 'warning';
         await setCachedResult(url, result, 'safetyStatusCache');
         return { status: result, sources: ['VirusTotal'] };
@@ -797,7 +676,6 @@ const checkURLSafety = async (url) => {
     // Not malicious, but check for suspicious patterns
     const suspiciousPatterns = checkSuspiciousPatterns(url, domain);
     if (suspiciousPatterns.length > 0) {
-      console.log(`[Safety Check] Suspicious patterns detected: ${suspiciousPatterns.join(', ')}`);
       result = 'warning';
       await setCachedResult(url, result, 'safetyStatusCache');
       return { status: result, sources: suspiciousPatterns };
@@ -805,7 +683,6 @@ const checkURLSafety = async (url) => {
 
     // Both checks passed (or Google SB not configured) and no suspicious patterns
     result = 'safe';
-    console.log(`[Safety Check] Final result for ${url}: ${result}`);
     await setCachedResult(url, result, 'safetyStatusCache');
     return { status: result, sources: [] };
 
