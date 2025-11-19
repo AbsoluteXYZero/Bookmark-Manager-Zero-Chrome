@@ -397,7 +397,7 @@ Please report security vulnerabilities via GitHub Issues (mark as security issue
 
 - **Chrome:** ✅ Fully supported (Manifest V3)
 - **Edge:** ✅ Should work (Chromium-based)
-- **Firefox:** ❌ Use [Firefox version](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero)
+- **Firefox:** ❌ Use [Firefox version](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Firefox)
 
 ## Roadmap
 
