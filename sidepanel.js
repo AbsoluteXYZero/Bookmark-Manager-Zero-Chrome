@@ -3178,9 +3178,9 @@ async function saveNewFolder() {
   }
 
   try {
+    // Chrome creates a folder when no url is provided
     await chrome.bookmarks.create({
       title,
-      type: 'folder',
       parentId
     });
 
