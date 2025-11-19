@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue)](https://github.com/AsbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -414,7 +414,23 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.3.0 (Current) - Chrome Port
+### v1.4.0 (Current)
+
+**New Features:**
+- 🛡️ **HTTP Redirect Detection** - Detects when HTTP URLs redirect to HTTPS
+- 📍 **Smart Context Menus** - Menus automatically reposition to stay within viewport
+- 🔍 **Detailed Security Tooltips** - Shows specific patterns detected (HTTP Only, URL Shortener, Suspicious TLD, IP Address)
+- 📊 **Stacked Status Icons** - Shield on top, chain below for better space efficiency
+- 🖱️ **Clickable Status Icons** - Click shields or chains for detailed popup information
+- 💾 **Improved Caching** - Cache now stores sources with status for better tooltip support
+- 📦 **Centralized Version** - Version now managed from manifest.json as single source of truth
+
+**Bug Fixes:**
+- Fixed gap issue between bookmarks and status bar caused by CSS zoom
+- Fixed security warnings not showing specific pattern details
+- Improved cache to handle both old and new format for backwards compatibility
+
+### v1.3.0 - Chrome Port
 
 **New Features:**
 - 🌐 **Chrome Support** - Ported from Firefox to Chrome using Side Panel API

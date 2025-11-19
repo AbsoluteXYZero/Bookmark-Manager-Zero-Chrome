@@ -274,7 +274,7 @@ const checkGoogleSafeBrowsing = async (url) => {
         body: JSON.stringify({
           client: {
             clientId: 'bookmark-manager-zero',
-            clientVersion: '1.3.0'
+            clientVersion: chrome.runtime.getManifest().version
           },
           threatInfo: {
             threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
@@ -541,12 +541,39 @@ const updateBlocklistDatabase = async () => {
 };
 
 // Check for suspicious URL patterns that aren't necessarily malicious but warrant caution
-const checkSuspiciousPatterns = (url, domain) => {
+const checkSuspiciousPatterns = async (url, domain) => {
   const patterns = [];
 
   // 1. Check for HTTP-only (no encryption)
   if (url.toLowerCase().startsWith('http://')) {
-    patterns.push('HTTP Only (Unencrypted)');
+    // Check if it redirects to HTTPS
+    let redirectsToHttps = false;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+      const response = await fetch(url, {
+        method: 'HEAD',
+        signal: controller.signal,
+        credentials: 'omit',
+        redirect: 'follow'
+      });
+      clearTimeout(timeoutId);
+
+      // Check if final URL is HTTPS
+      if (response.url && response.url.toLowerCase().startsWith('https://')) {
+        redirectsToHttps = true;
+      }
+    } catch (e) {
+      // Couldn't check redirect, assume no redirect
+      console.log(`[Suspicious Patterns] Could not check redirect for ${url}:`, e.message);
+    }
+
+    if (redirectsToHttps) {
+      patterns.push('HTTP Only (redirects to HTTPS)');
+    } else {
+      patterns.push('HTTP Only (Unencrypted)');
+    }
   }
 
   // 2. Check for known URL shorteners
@@ -592,10 +619,15 @@ const checkURLSafety = async (url) => {
   // Check cache first
   const cached = await getCachedResult(url, 'safetyStatusCache');
   if (cached) {
-    // Cached results are old format (string only), return with empty sources
-    return { status: cached, sources: [] };
+    console.log(`[Safety Check] Using cached result for ${url}:`, cached);
+    // Handle both old format (string) and new format (object with sources)
+    if (typeof cached === 'string') {
+      return { status: cached, sources: [] };
+    }
+    return { status: cached.status, sources: cached.sources || [] };
   }
 
+  console.log(`[Safety Check] Starting safety check for ${url}`);
 
   let result;
 
@@ -610,9 +642,9 @@ const checkURLSafety = async (url) => {
     if (maliciousUrlsSet.size === 0) {
       const success = await updateBlocklistDatabase();
       if (!success) {
-        result = 'unknown';
-        await setCachedResult(url, result, 'safetyStatusCache');
-        return result;
+        const resultObj = { status: 'unknown', sources: [] };
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
       }
     }
 
@@ -628,17 +660,17 @@ const checkURLSafety = async (url) => {
     // Check if full URL is in the malicious set
     if (maliciousUrlsSet.has(normalizedUrl)) {
       const sources = domainSourceMap.get(normalizedUrl) || [];
-      result = 'unsafe';
-      await setCachedResult(url, result, 'safetyStatusCache');
-      return { status: result, sources };
+      const resultObj = { status: 'unsafe', sources };
+      await setCachedResult(url, resultObj, 'safetyStatusCache');
+      return resultObj;
     }
 
     // Also check if just the domain is flagged (entire domain compromised)
     if (maliciousUrlsSet.has(domain)) {
       const sources = domainSourceMap.get(domain) || [];
-      result = 'unsafe';
-      await setCachedResult(url, result, 'safetyStatusCache');
-      return { status: result, sources };
+      const resultObj = { status: 'unsafe', sources };
+      await setCachedResult(url, resultObj, 'safetyStatusCache');
+      return resultObj;
     }
 
 
@@ -652,9 +684,9 @@ const checkURLSafety = async (url) => {
       const googleResult = await checkGoogleSafeBrowsing(url);
 
       if (googleResult === 'unsafe') {
-        result = 'unsafe';
-        await setCachedResult(url, result, 'safetyStatusCache');
-        return { status: result, sources: ['Google Safe Browsing'] };
+        const resultObj = { status: 'unsafe', sources: ['Google Safe Browsing'] };
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
       }
     }
 
@@ -663,34 +695,34 @@ const checkURLSafety = async (url) => {
       const vtResult = await checkVirusTotal(url);
 
       if (vtResult === 'unsafe') {
-        result = 'unsafe';
-        await setCachedResult(url, result, 'safetyStatusCache');
-        return { status: result, sources: ['VirusTotal'] };
+        const resultObj = { status: 'unsafe', sources: ['VirusTotal'] };
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
       } else if (vtResult === 'warning') {
-        result = 'warning';
-        await setCachedResult(url, result, 'safetyStatusCache');
-        return { status: result, sources: ['VirusTotal'] };
+        const resultObj = { status: 'warning', sources: ['VirusTotal'] };
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
       }
     }
 
     // Not malicious, but check for suspicious patterns
-    const suspiciousPatterns = checkSuspiciousPatterns(url, domain);
+    const suspiciousPatterns = await checkSuspiciousPatterns(url, domain);
     if (suspiciousPatterns.length > 0) {
-      result = 'warning';
-      await setCachedResult(url, result, 'safetyStatusCache');
-      return { status: result, sources: suspiciousPatterns };
+      const resultObj = { status: 'warning', sources: suspiciousPatterns };
+      await setCachedResult(url, resultObj, 'safetyStatusCache');
+      return resultObj;
     }
 
     // Both checks passed (or Google SB not configured) and no suspicious patterns
-    result = 'safe';
-    await setCachedResult(url, result, 'safetyStatusCache');
-    return { status: result, sources: [] };
+    const resultObj = { status: 'safe', sources: [] };
+    await setCachedResult(url, resultObj, 'safetyStatusCache');
+    return resultObj;
 
   } catch (error) {
     console.error(`[Blocklist] Error checking URL safety:`, error);
-    result = 'unknown';
-    await setCachedResult(url, result, 'safetyStatusCache');
-    return { status: result, sources: [] };
+    const resultObj = { status: 'unknown', sources: [] };
+    await setCachedResult(url, resultObj, 'safetyStatusCache');
+    return resultObj;
   }
 };
 

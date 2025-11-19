@@ -423,11 +423,12 @@
 
     .status-indicators {
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: flex-start;
-      gap: 6px;
+      justify-content: center;
+      gap: 2px;
       flex-shrink: 0;
-      min-height: 20px;
+      min-width: 16px;
     }
 
     .status-icon {
@@ -437,6 +438,15 @@
       align-items: center;
       justify-content: center;
       cursor: help;
+      transition: all 0.2s;
+    }
+
+    .status-icon:hover {
+      transform: scale(1.2);
+    }
+
+    .clickable-status {
+      cursor: pointer;
     }
 
     .status-icon svg {
@@ -1671,7 +1681,7 @@
         </svg>
       </div>
       <div class="logo-text">
-        <div class="logo-title">Bookmark Manager Zero • <span style="color: var(--md-sys-color-primary); font-weight: 500; font-size: 11px;">v1.3.0</span></div>
+        <div class="logo-title">Bookmark Manager Zero • <span style="color: var(--md-sys-color-primary); font-weight: 500; font-size: 11px;">v1.4.0</span></div>
         <div class="logo-subtitle">A modern interface for your native bookmarks</div>
       </div>
     </div>
