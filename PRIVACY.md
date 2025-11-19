@@ -134,6 +134,11 @@ The extension requests the following permissions:
 - **What:** Create tabs when you click bookmarks
 - **Scope:** Tab creation only
 
+### `sidePanel`
+- **Why:** Display the bookmark manager interface in Chrome's side panel
+- **What:** Render the extension UI alongside web pages for easy access
+- **Scope:** Side panel display only (no page interaction)
+
 ### `<all_urls>` (Host Permissions)
 - **Why:** Check if bookmark links are still working
 - **What:** Send HEAD requests to bookmark URLs to verify availability
