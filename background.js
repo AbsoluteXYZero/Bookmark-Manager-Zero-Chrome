@@ -227,6 +227,14 @@ const checkLinkStatus = async (url) => {
       } catch (e) {
         // URL parsing failed, continue with live status
       }
+
+      // Check response status (only available in cors mode)
+      // 404, 410, 451 indicate the content is gone
+      if (response.status === 404 || response.status === 410 || response.status === 451) {
+        result = 'dead';
+        await setCachedResult(url, result, 'linkStatusCache');
+        return result;
+      }
     }
 
     // Site is reachable and not parked
@@ -282,6 +290,14 @@ const checkLinkStatus = async (url) => {
           }
         } catch (e) {
           // URL parsing failed, continue with live status
+        }
+
+        // Check response status (only available in cors mode)
+        // 404, 410, 451 indicate the content is gone
+        if (fallbackResponse.status === 404 || fallbackResponse.status === 410 || fallbackResponse.status === 451) {
+          result = 'dead';
+          await setCachedResult(url, result, 'linkStatusCache');
+          return result;
         }
       }
 
