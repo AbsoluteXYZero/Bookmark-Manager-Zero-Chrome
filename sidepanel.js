@@ -453,6 +453,11 @@ const autoClearCacheSelect = document.getElementById('autoClearCache');
 const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
 
+// Scan status bar DOM elements
+const scanStatusBar = document.getElementById('scanStatusBar');
+const scanProgress = document.getElementById('scanProgress');
+const totalCount = document.getElementById('totalCount');
+
 // Undo toast DOM elements
 const undoToast = document.getElementById('undoToast');
 const undoMessage = document.getElementById('undoMessage');
@@ -711,6 +716,27 @@ async function loadBookmarks() {
   }
 }
 
+// Update total bookmark count in status bar
+function updateTotalBookmarkCount() {
+  if (!totalCount) return;
+
+  let count = 0;
+  function countBookmarksRecursive(nodes) {
+    if (!nodes) return;
+    nodes.forEach(node => {
+      if (node.url) {
+        count++;
+      }
+      if (node.children) {
+        countBookmarksRecursive(node.children);
+      }
+    });
+  }
+
+  countBookmarksRecursive(bookmarkTree);
+  totalCount.textContent = count + ' bookmark' + (count !== 1 ? 's' : '');
+}
+
 // Automatically check bookmark statuses for unchecked bookmarks
 // Uses rate limiting to prevent browser overload
 async function autoCheckBookmarkStatuses() {
@@ -741,6 +767,11 @@ async function autoCheckBookmarkStatuses() {
 
   if (bookmarksToCheck.length === 0) return;
 
+  // Update status bar to show scanning
+  const totalToScan = bookmarksToCheck.length;
+  let scannedCount = 0;
+  if (scanStatusBar) scanStatusBar.classList.add('scanning');
+  if (scanProgress) scanProgress.textContent = 'Scanning: 0/' + totalToScan;
 
   // Mark these bookmarks as being checked to prevent re-checking
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
@@ -804,6 +835,9 @@ async function autoCheckBookmarkStatuses() {
       });
     });
 
+    // Update progress in status bar
+    scannedCount += batch.length;
+    if (scanProgress) scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan;
 
     // Wait before processing next batch (except for the last batch)
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
@@ -813,6 +847,10 @@ async function autoCheckBookmarkStatuses() {
 
   // Render once at the end of all batches
   renderBookmarks();
+
+  // Update status bar to show completion
+  if (scanProgress) scanProgress.textContent = 'Ready';
+  if (scanStatusBar) scanStatusBar.classList.remove('scanning');
 
 }
 
@@ -1035,6 +1073,9 @@ function getMockBookmarks() {
 
 // Render bookmarks
 function renderBookmarks() {
+  // Update total bookmark count in status bar
+  updateTotalBookmarkCount();
+
   const filtered = filterAndSearchBookmarks(bookmarkTree);
 
   if (filtered.length === 0) {

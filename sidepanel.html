@@ -272,6 +272,64 @@
       scroll-behavior: smooth;
     }
 
+    /* Scan Status Bar */
+    .scan-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 8px;
+      background: var(--md-sys-color-surface-variant);
+      border-top: 1px solid var(--md-sys-color-outline-variant);
+      font-size: 9px;
+      color: var(--md-sys-color-on-surface-variant);
+    }
+
+    .scan-status-bar .status-text {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .scan-status-bar .rescan-btn {
+      background: none;
+      border: none;
+      padding: 2px;
+      cursor: pointer;
+      color: var(--md-sys-color-on-surface-variant);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .scan-status-bar .rescan-btn:hover {
+      background: var(--md-sys-color-surface-container-highest);
+      color: var(--md-sys-color-primary);
+    }
+
+    .scan-status-bar .info-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--md-sys-color-outline);
+      color: var(--md-sys-color-surface);
+      font-size: 7px;
+      font-weight: bold;
+      cursor: help;
+      margin-left: 3px;
+    }
+
+    .scan-status-bar .scan-progress {
+      font-variant-numeric: tabular-nums;
+    }
+
+    .scan-status-bar.scanning .scan-progress {
+      color: var(--md-sys-color-primary);
+    }
+
     /* Bookmark Item Styles */
     .bookmark-item {
       background: var(--md-sys-color-surface-container);
@@ -1799,11 +1857,6 @@
   </div>
 
   <div id="filterBar" class="filters hidden">
-    <button class="btn btn-icon" id="rescanAllBtn" title="Rescan All Bookmarks" aria-label="Rescan all bookmarks" style="margin-right: 8px;">
-      <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-        <path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/>
-      </svg>
-    </button>
     <div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); font-weight: 500; white-space: nowrap;">Filter:</div>
     <button class="filter-chip" data-filter="live" title="Show only live links">
       <svg width="12" height="12" fill="var(--md-sys-color-success)" viewBox="0 0 24 24">
@@ -1916,6 +1969,20 @@
     <div style="text-align: center; padding: 40px 20px; color: var(--md-sys-color-on-surface-variant);">
       <div style="font-size: 14px;">Loading bookmarks...</div>
     </div>
+  </div>
+
+  <!-- Scan Status Bar -->
+  <div class="scan-status-bar" id="scanStatusBar">
+    <div class="status-text">
+      <button class="rescan-btn" id="rescanAllBtn" title="Rescan All Bookmarks" aria-label="Rescan all bookmarks">
+        <svg width="10" height="10" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/>
+        </svg>
+      </button>
+      <span class="scan-progress" id="scanProgress">Ready</span>
+      <span class="info-icon" title="Scans bookmarks on-demand as you expand folders&#10;Scans 5 bookmarks every 1 second">i</span>
+    </div>
+    <div class="total-count" id="totalCount">0 bookmarks</div>
   </div>
 
   <!-- Edit Modal -->
