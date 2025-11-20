@@ -14,7 +14,11 @@
 
 ## Overview
 
-Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-rich side panel interface for managing your native Chrome bookmarks. It enhances your bookmark management experience with modern UI, advanced search, safety checking, and intelligent organization tools.
+Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-rich sidebar interface for managing your **native Chrome bookmarks**. No cloud sync, no self-hosting, no separate accounts—it works directly with the bookmarks already built into your browser.
+
+Changes sync **bi-directionally and instantly**: any edits made in Bookmark Manager Zero immediately appear in Chrome's native bookmark system, and vice versa. Don't worry about accidental changes—the built-in undo feature lets you quickly restore recently deleted bookmarks.
+
+It enhances your bookmark management experience with modern UI, advanced search, safety checking, and intelligent organization tools while keeping your data exactly where it belongs: in Chrome.
 
 ### Why Bookmark Manager Zero?
 
