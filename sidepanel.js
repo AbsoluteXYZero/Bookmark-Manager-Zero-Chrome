@@ -465,11 +465,6 @@ const undoButton = document.getElementById('undoButton');
 const undoCountdownEl = document.getElementById('undoCountdown');
 const undoDismiss = document.getElementById('undoDismiss');
 
-// Scan status bar DOM elements
-const scanStatusBar = document.getElementById('scanStatusBar');
-const scanProgress = document.getElementById('scanProgress');
-const totalCount = document.getElementById('totalCount');
-
 // Initialize
 async function init() {
   // Force update logo title to bypass cache
