@@ -450,7 +450,7 @@ const exportBookmarksBtn = document.getElementById('exportBookmarksBtn');
 const closeExtensionBtn = document.getElementById('closeExtensionBtn');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
 const autoClearCacheSelect = document.getElementById('autoClearCache');
-const rescanBookmarksBtn = document.getElementById('rescanBookmarksBtn');
+const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
 
 // Undo toast DOM elements
@@ -4432,7 +4432,7 @@ function setupEventListeners() {
   });
 
   // Rescan all bookmarks
-  rescanBookmarksBtn.addEventListener('click', async () => {
+  rescanAllBtn.addEventListener('click', async () => {
     await rescanAllBookmarks();
     closeAllMenus();
   });
