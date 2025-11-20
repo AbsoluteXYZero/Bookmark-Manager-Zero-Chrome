@@ -725,7 +725,8 @@ async function autoCheckBookmarkStatuses() {
   function traverse(nodes, parentExpanded = true) {
     nodes.forEach(node => {
       // Only check bookmarks if parent is expanded (or at root level)
-      if (parentExpanded && node.url && !node.linkStatus && !checkedBookmarks.has(node.id)) {
+      // Include bookmarks with 'unknown' status (e.g., after rescan)
+      if (parentExpanded && node.url && (!node.linkStatus || node.linkStatus === 'unknown') && !checkedBookmarks.has(node.id)) {
         bookmarksToCheck.push(node);
       }
       // For folders, only traverse children if folder is expanded
@@ -2593,29 +2594,39 @@ async function recheckBookmarkStatus(bookmarkId) {
   const bookmark = findBookmarkById(bookmarkTree, bookmarkId);
   if (!bookmark || !bookmark.url) return;
 
-  if (isPreviewMode) {
-    alert('🔄 Rechecking bookmark status...\n\nIn the real extension, this would check:\n• Link status (live/dead/parked)\n• Security analysis (heuristic-based threat detection)');
+  // Skip if both checking types are disabled
+  if (!linkCheckingEnabled && !safetyCheckingEnabled) {
+    alert('Both link checking and safety checking are disabled.\n\nEnable at least one in Settings to recheck bookmark status.');
+    return;
   }
 
-  // Update bookmark to show checking status
-  updateBookmarkInTree(bookmarkId, {
-    linkStatus: 'checking',
-    safetyStatus: 'checking'
-  });
+  if (isPreviewMode) {
+    alert('🔄 Rechecking bookmark status...\n\nIn the real extension, this would check:\n• Link status (live/dead/parked)\n• Security analysis (heuristic-based threat detection)');
+    return;
+  }
+
+  // Update bookmark to show checking status based on enabled settings
+  const checkingUpdates = {};
+  if (linkCheckingEnabled) checkingUpdates.linkStatus = 'checking';
+  if (safetyCheckingEnabled) checkingUpdates.safetyStatus = 'checking';
+  updateBookmarkInTree(bookmarkId, checkingUpdates);
   renderBookmarks();
 
-  // Perform checks
-  const [linkStatus, safetyStatusResult] = await Promise.all([
-    checkLinkStatus(bookmark.url),
-    checkSafetyStatus(bookmark.url)
-  ]);
+  // Perform checks based on enabled settings
+  const results = {};
+
+  if (linkCheckingEnabled) {
+    results.linkStatus = await checkLinkStatus(bookmark.url);
+  }
+
+  if (safetyCheckingEnabled) {
+    const safetyStatusResult = await checkSafetyStatus(bookmark.url);
+    results.safetyStatus = safetyStatusResult.status;
+    results.safetySources = safetyStatusResult.sources;
+  }
 
   // Update bookmark with results
-  updateBookmarkInTree(bookmarkId, {
-    linkStatus,
-    safetyStatus: safetyStatusResult.status,
-    safetySources: safetyStatusResult.sources
-  });
+  updateBookmarkInTree(bookmarkId, results);
   renderBookmarks();
 }
 
