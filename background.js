@@ -89,16 +89,30 @@ function sanitizeUrl(urlString) {
 }
 
 const PARKING_DOMAINS = [
+  // Major registrars with parking
   'hugedomains.com',
   'godaddy.com',
   'namecheap.com',
+  'namesilo.com',
+  'porkbun.com',
+  'dynadot.com',
+  'epik.com',
+  // Domain marketplaces
   'sedo.com',
   'dan.com',
-  'squadhelp.com',
   'afternic.com',
   'domainmarket.com',
   'uniregistry.com',
-  'namesilo.com',
+  'squadhelp.com',
+  'brandbucket.com',
+  'undeveloped.com',
+  'atom.com',
+  // Parking services
+  'bodis.com',
+  'parkingcrew.net',
+  'parkingcrew.com',
+  'above.com',
+  'sedoparking.com',
 ];
 
 // Cache for link and safety checks (7 days TTL)
@@ -167,20 +181,51 @@ const checkLinkStatus = async (url) => {
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
 
   try {
-    // Try HEAD request first (lighter weight)
-    // Use no-cors mode to avoid CORS errors for sites that block cross-origin requests
-    const response = await fetch(url, {
-      method: 'HEAD',
-      signal: controller.signal,
-      mode: 'no-cors',
-      credentials: 'omit',
-      redirect: 'follow'
-    });
+    // Try fetch with cors mode first to get redirect info
+    // Fall back to no-cors if CORS blocks us
+    let response;
+    let usedCors = false;
+
+    try {
+      response = await fetch(url, {
+        method: 'HEAD',
+        signal: controller.signal,
+        mode: 'cors',
+        credentials: 'omit',
+        redirect: 'follow'
+      });
+      usedCors = true;
+    } catch (corsError) {
+      // CORS blocked, try no-cors mode
+      response = await fetch(url, {
+        method: 'HEAD',
+        signal: controller.signal,
+        mode: 'no-cors',
+        credentials: 'omit',
+        redirect: 'follow'
+      });
+    }
     clearTimeout(timeoutId);
 
-    // no-cors mode returns opaque response, but successful fetch means site is reachable
-    // Parking detection is handled by domain check above - no need for content check
-    // which would cause CORS errors for many sites
+    // Check if redirected to a parking domain (only works with cors mode)
+    if (usedCors && response.url) {
+      try {
+        const finalHost = new URL(response.url).hostname.toLowerCase();
+        const originalHost = new URL(url).hostname.toLowerCase();
+
+        // Only flag if redirected to a DIFFERENT domain that's a known parking service
+        if (finalHost !== originalHost &&
+            PARKING_DOMAINS.some(domain => finalHost.includes(domain))) {
+          result = 'parked';
+          await setCachedResult(url, result, 'linkStatusCache');
+          return result;
+        }
+      } catch (e) {
+        // URL parsing failed, continue with live status
+      }
+    }
+
+    // Site is reachable and not parked
     result = 'live';
     await setCachedResult(url, result, 'linkStatusCache');
     return result;
@@ -188,21 +233,52 @@ const checkLinkStatus = async (url) => {
   } catch (error) {
     clearTimeout(timeoutId);
 
-    // If HEAD fails, try GET with no-cors as fallback
+    // If HEAD fails, try GET as fallback
     try {
       const fallbackController = new AbortController();
       const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
 
-      const fallbackResponse = await fetch(url, {
-        method: 'GET',
-        signal: fallbackController.signal,
-        mode: 'no-cors',
-        credentials: 'omit',
-        redirect: 'follow'
-      });
+      let fallbackResponse;
+      let usedCorsFallback = false;
+
+      try {
+        fallbackResponse = await fetch(url, {
+          method: 'GET',
+          signal: fallbackController.signal,
+          mode: 'cors',
+          credentials: 'omit',
+          redirect: 'follow'
+        });
+        usedCorsFallback = true;
+      } catch (corsError) {
+        // CORS blocked, try no-cors mode
+        fallbackResponse = await fetch(url, {
+          method: 'GET',
+          signal: fallbackController.signal,
+          mode: 'no-cors',
+          credentials: 'omit',
+          redirect: 'follow'
+        });
+      }
       clearTimeout(fallbackTimeout);
 
-      // no-cors mode returns opaque response, but if fetch succeeds, link is likely live
+      // Check if redirected to a parking domain (only works with cors mode)
+      if (usedCorsFallback && fallbackResponse.url) {
+        try {
+          const finalHost = new URL(fallbackResponse.url).hostname.toLowerCase();
+          const originalHost = new URL(url).hostname.toLowerCase();
+
+          if (finalHost !== originalHost &&
+              PARKING_DOMAINS.some(domain => finalHost.includes(domain))) {
+            result = 'parked';
+            await setCachedResult(url, result, 'linkStatusCache');
+            return result;
+          }
+        } catch (e) {
+          // URL parsing failed, continue with live status
+        }
+      }
+
       result = 'live';
       await setCachedResult(url, result, 'linkStatusCache');
       return result;

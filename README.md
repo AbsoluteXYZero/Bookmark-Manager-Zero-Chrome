@@ -243,23 +243,26 @@ The extension checks if bookmark URLs are still accessible and categorizes them 
 
 #### Detection Method
 
-1. **Initial Domain Check**: The URL's domain is first checked against a list of known domain parking services (HugeDomains, GoDaddy, Namecheap, Sedo, etc.)
+1. **Initial Domain Check**: The URL's domain is first checked against a list of 22+ known domain parking services:
+   - **Registrars**: HugeDomains, GoDaddy, Namecheap, NameSilo, Porkbun, Dynadot, Epik
+   - **Marketplaces**: Sedo, Dan.com, Afternic, DomainMarket, Squadhelp, BrandBucket, Undeveloped, Atom
+   - **Parking Services**: Bodis, ParkingCrew, Above.com, SedoParking
 
-2. **HTTP HEAD Request**: A lightweight HEAD request is sent to the URL with a 10-second timeout
+2. **HTTP HEAD Request**: A lightweight HEAD request is sent with CORS mode to track redirects (10-second timeout)
    - No page content is downloaded
-   - Only HTTP response codes are checked
    - Credentials are omitted for privacy
+   - Falls back to no-cors mode if CORS is blocked
 
-3. **Response Code Interpretation**:
-   - **2xx or 3xx** → Live (successful response or redirect)
-   - **4xx or 5xx** → Dead (client/server error)
+3. **Redirect Detection**: If the URL redirects to a different domain, the final destination is checked against parking domain lists
+   - Example: `example.com` → `hugedomains.com/domain/example.com` = **Parked**
+   - Same-site redirects (www, HTTPS) are not flagged
+
+4. **Response Interpretation**:
+   - **Successful response** → Live
+   - **Redirects to parking domain** → Parked
    - **Timeout/Network Error** → Dead
 
-4. **Redirect Analysis**: If the URL redirects, the final destination is checked against parking domain lists
-
-5. **Content Analysis** (for ambiguous cases): Page HTML is analyzed for 50+ parking indicators like "domain for sale", "buy this domain", "parked free", etc.
-
-6. **Fallback Strategy**: If HEAD fails due to CORS, a GET request with `no-cors` mode is attempted
+5. **Fallback Strategy**: If HEAD fails, a GET request is attempted with the same redirect detection logic
 
 #### Caching
 Results are cached locally for 7 days to minimize network requests.
