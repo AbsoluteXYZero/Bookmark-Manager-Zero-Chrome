@@ -403,7 +403,7 @@ let displayOptions = {
   favicon: true
 };
 let currentEditItem = null;
-let zoomLevel = 100;
+let zoomLevel = 80;
 let checkedBookmarks = new Set(); // Track which bookmarks have been checked to prevent infinite loops
 let scanCancelled = false; // Flag to cancel ongoing scans
 let linkCheckingEnabled = true; // Toggle for link checking
@@ -464,6 +464,11 @@ const undoMessage = document.getElementById('undoMessage');
 const undoButton = document.getElementById('undoButton');
 const undoCountdownEl = document.getElementById('undoCountdown');
 const undoDismiss = document.getElementById('undoDismiss');
+
+// Scan status bar DOM elements
+const scanStatusBar = document.getElementById('scanStatusBar');
+const scanProgress = document.getElementById('scanProgress');
+const totalCount = document.getElementById('totalCount');
 
 // Initialize
 async function init() {
@@ -603,13 +608,13 @@ function setView(newView) {
 // Load zoom preference
 function loadZoom() {
   if (isPreviewMode) {
-    zoomLevel = 100;
+    zoomLevel = 80;
     applyZoom();
     return;
   }
 
   safeStorage.get('zoomLevel').then(result => {
-    zoomLevel = result.zoomLevel || 100;
+    zoomLevel = result.zoomLevel || 80;
     applyZoom();
     updateZoomDisplay();
   });
@@ -710,6 +715,9 @@ async function loadBookmarks() {
 
     // Clear checked bookmarks when loading fresh data
     checkedBookmarks.clear();
+
+    // Update total bookmark count in status bar
+    updateTotalBookmarkCount();
   } catch (error) {
     console.error('Error loading bookmarks:', error);
     showError('Failed to load bookmarks');
@@ -769,7 +777,6 @@ async function autoCheckBookmarkStatuses() {
 
   // Update status bar to show scanning
   const totalToScan = bookmarksToCheck.length;
-  let scannedCount = 0;
   if (scanStatusBar) scanStatusBar.classList.add('scanning');
   if (scanProgress) scanProgress.textContent = 'Scanning: 0/' + totalToScan;
 
@@ -779,6 +786,7 @@ async function autoCheckBookmarkStatuses() {
   // Process bookmarks in batches to prevent browser overload
   const BATCH_SIZE = 5; // Check 5 bookmarks at a time
   const BATCH_DELAY = 1000; // 1 second delay between batches
+  let scannedCount = 0;
 
   for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
     // Check if scan was cancelled
@@ -1504,12 +1512,13 @@ function createBookmarkElement(bookmark) {
   const safetySources = bookmark.safetySources || [];
 
   // Build status indicators HTML based on display options
+  // Shield (safety) on top, chain (link status) on bottom
   let statusIndicatorsHtml = '';
-  if (displayOptions.liveStatus) {
-    statusIndicatorsHtml += getStatusDotHtml(linkStatus);
-  }
   if (displayOptions.safetyStatus) {
     statusIndicatorsHtml += getShieldHtml(safetyStatus, bookmark.url, safetySources);
+  }
+  if (displayOptions.liveStatus) {
+    statusIndicatorsHtml += getStatusDotHtml(linkStatus);
   }
 
   // Build favicon HTML based on display options
@@ -3703,34 +3712,34 @@ function showDuplicatesModal(duplicates) {
 
   // Build HTML for duplicates
   let html = `
-    <div style="margin-bottom: 1rem;">
-      <p><strong>Found ${duplicates.length} URL(s) with duplicates (${duplicates.reduce((sum, d) => sum + d.bookmarks.length, 0)} total bookmarks)</strong></p>
-      <p style="color: #666; font-size: 0.9rem;">Select the bookmarks you want to delete:</p>
+    <div style="margin-bottom: 8px;">
+      <p style="font-size: 11px;"><strong>Found ${duplicates.length} URL(s) with duplicates (${duplicates.reduce((sum, d) => sum + d.bookmarks.length, 0)} total bookmarks)</strong></p>
+      <p style="color: #666; font-size: 9px;">Select the bookmarks you want to delete:</p>
     </div>
   `;
 
   for (const duplicate of duplicates) {
     html += `
-      <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(59, 130, 246, 0.05); border-radius: 6px; border: 1px solid rgba(59, 130, 246, 0.2);">
-        <div style="margin-bottom: 0.75rem;">
+      <div style="margin-bottom: 10px; padding: 8px; background: rgba(59, 130, 246, 0.05); border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.2);">
+        <div style="margin-bottom: 6px; font-size: 9px;">
           <strong style="color: #1e40af;">URL:</strong>
-          <a href="${duplicate.url}" target="_blank" style="color: #2563eb; text-decoration: none; word-break: break-all;">${duplicate.url}</a>
+          <a href="${duplicate.url}" target="_blank" style="color: #2563eb; text-decoration: none; word-break: break-all; font-size: 9px;">${duplicate.url}</a>
         </div>
-        <div style="margin-left: 1rem;">
+        <div style="margin-left: 8px;">
     `;
 
     for (const bookmark of duplicate.bookmarks) {
       html += `
-        <div style="margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+        <div style="margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
           <input type="checkbox"
                  id="dup-${bookmark.id}"
                  data-bookmark-id="${bookmark.id}"
                  data-url="${duplicate.url}"
                  class="duplicate-checkbox"
-                 style="cursor: pointer;">
-          <label for="dup-${bookmark.id}" style="cursor: pointer; flex: 1;">
+                 style="cursor: pointer; width: 10px; height: 10px;">
+          <label for="dup-${bookmark.id}" style="cursor: pointer; flex: 1; font-size: 9px;">
             <span style="font-weight: 500;">${bookmark.title || 'Untitled'}</span>
-            <span style="color: #666; font-size: 0.85rem;"> - in ${bookmark.parentPath || 'Root'}</span>
+            <span style="color: #666; font-size: 8px;"> - in ${bookmark.parentPath || 'Root'}</span>
           </label>
         </div>
       `;
