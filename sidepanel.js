@@ -4528,13 +4528,6 @@ function setupEventListeners() {
     closeAllMenus();
   });
 
-  // View error logs
-  const viewErrorLogsBtn = document.getElementById('viewErrorLogsBtn');
-  viewErrorLogsBtn.addEventListener('click', async () => {
-    await viewErrorLogs();
-    closeAllMenus();
-  });
-
   // Help & Documentation
   const helpDocsBtn = document.getElementById('helpDocsBtn');
   helpDocsBtn.addEventListener('click', () => {
