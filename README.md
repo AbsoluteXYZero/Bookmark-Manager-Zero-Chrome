@@ -413,10 +413,16 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.5.0 (Current) - Grid View Improvements
+### v1.5.0 (Current) - Grid View & Link Detection Improvements
 
-**Improvements:**
-- 📐 **Compact Collapsed Folders** - Reduced spacing between collapsed folders in grid view with scaled negative margins based on grid gap values
+**New Features:**
+- 📐 **Square Card Layout** - Bookmarks display as square cards in grid view with aspect-ratio
+- 🖼️ **Preview Support** - Webpage previews visible in grid view cards
+- 📁 **Compact Folders** - Reduced spacing between collapsed folders in grid view
+- 🔧 **Fixed Column Layout** - Grid columns now properly sized with minmax(0, 1fr)
+- 🔗 **Redirect-Based Parking Detection** - Detects when URLs redirect to known parking domains
+- 🌐 **Expanded Parking Domains** - Now checks 22+ parking services (up from 10)
+- ☠️ **Dead Link Detection** - Properly flags 404, 410, and 451 responses as dead
 
 ---
 
