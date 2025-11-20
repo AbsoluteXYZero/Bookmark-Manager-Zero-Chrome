@@ -177,9 +177,6 @@ const checkLinkStatus = async (url) => {
     // Invalid URL, continue with fetch attempt
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
-
   try {
     // Try fetch with cors mode first to get redirect info
     // Fall back to no-cors if CORS blocks us
@@ -187,25 +184,32 @@ const checkLinkStatus = async (url) => {
     let usedCors = false;
 
     try {
+      const corsController = new AbortController();
+      const corsTimeout = setTimeout(() => corsController.abort(), 10000);
+
       response = await fetch(url, {
         method: 'HEAD',
-        signal: controller.signal,
+        signal: corsController.signal,
         mode: 'cors',
         credentials: 'omit',
         redirect: 'follow'
       });
+      clearTimeout(corsTimeout);
       usedCors = true;
     } catch (corsError) {
-      // CORS blocked, try no-cors mode
+      // CORS blocked, try no-cors mode with fresh controller
+      const noCorsController = new AbortController();
+      const noCorsTimeout = setTimeout(() => noCorsController.abort(), 10000);
+
       response = await fetch(url, {
         method: 'HEAD',
-        signal: controller.signal,
+        signal: noCorsController.signal,
         mode: 'no-cors',
         credentials: 'omit',
         redirect: 'follow'
       });
+      clearTimeout(noCorsTimeout);
     }
-    clearTimeout(timeoutId);
 
     // Check if redirected to a parking domain (only works with cors mode)
     if (usedCors && response.url) {
@@ -231,36 +235,38 @@ const checkLinkStatus = async (url) => {
     return result;
 
   } catch (error) {
-    clearTimeout(timeoutId);
-
     // If HEAD fails, try GET as fallback
     try {
-      const fallbackController = new AbortController();
-      const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
-
       let fallbackResponse;
       let usedCorsFallback = false;
 
       try {
+        const corsController = new AbortController();
+        const corsTimeout = setTimeout(() => corsController.abort(), 8000);
+
         fallbackResponse = await fetch(url, {
           method: 'GET',
-          signal: fallbackController.signal,
+          signal: corsController.signal,
           mode: 'cors',
           credentials: 'omit',
           redirect: 'follow'
         });
+        clearTimeout(corsTimeout);
         usedCorsFallback = true;
       } catch (corsError) {
-        // CORS blocked, try no-cors mode
+        // CORS blocked, try no-cors mode with fresh controller
+        const noCorsController = new AbortController();
+        const noCorsTimeout = setTimeout(() => noCorsController.abort(), 8000);
+
         fallbackResponse = await fetch(url, {
           method: 'GET',
-          signal: fallbackController.signal,
+          signal: noCorsController.signal,
           mode: 'no-cors',
           credentials: 'omit',
           redirect: 'follow'
         });
+        clearTimeout(noCorsTimeout);
       }
-      clearTimeout(fallbackTimeout);
 
       // Check if redirected to a parking domain (only works with cors mode)
       if (usedCorsFallback && fallbackResponse.url) {
