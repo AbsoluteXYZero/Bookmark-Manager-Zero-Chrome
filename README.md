@@ -51,12 +51,12 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
       <img src="screenshots/Screenshot 2025-11-19 204209.png" alt="Screenshot 2" width="100%">
     </td>
     <td width="33%">
-      <img src="screenshots/Screenshot 2025-11-19 204236.png" alt="Screenshot 3" width="100%">
+      <img src="screenshots/Screenshot 2025-11-19 204352.png" alt="Screenshot 3" width="100%">
     </td>
   </tr>
   <tr>
     <td width="33%">
-      <img src="screenshots/Screenshot 2025-11-19 204352.png" alt="Screenshot 4" width="100%">
+      <img src="screenshots/Screenshot 2025-11-19 204236.png" alt="Screenshot 4" width="100%">
     </td>
     <td width="33%">
       <img src="screenshots/Screenshot 2025-11-19 204421.png" alt="Screenshot 5" width="100%">
