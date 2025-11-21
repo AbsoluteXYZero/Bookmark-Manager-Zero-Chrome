@@ -773,11 +773,16 @@ function applyGuiScale() {
   // Target elements: header, search, toolbar, filters, display options, status bar
   const header = document.querySelector('.header');
   const collapsibleHeader = document.getElementById('collapsibleHeader');
+  const filterBar = document.getElementById('filterBar');
+  const displayBar = document.getElementById('displayBar');
   const scanStatusBar = document.querySelector('.scan-status-bar');
 
-  if (header) header.style.fontSize = `${scaleFactor}em`;
-  if (collapsibleHeader) collapsibleHeader.style.fontSize = `${scaleFactor}em`;
-  if (scanStatusBar) scanStatusBar.style.fontSize = `${scaleFactor}em`;
+  // Use CSS zoom property for proper scaling of all elements (text, spacing, borders, etc.)
+  if (header) header.style.zoom = scaleFactor;
+  if (collapsibleHeader) collapsibleHeader.style.zoom = scaleFactor;
+  if (filterBar) filterBar.style.zoom = scaleFactor;
+  if (displayBar) displayBar.style.zoom = scaleFactor;
+  if (scanStatusBar) scanStatusBar.style.zoom = scaleFactor;
 }
 
 // Load checking settings from localStorage
