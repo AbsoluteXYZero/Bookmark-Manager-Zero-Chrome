@@ -2346,8 +2346,19 @@ function repositionMenuIfNeeded(menu, parentElement) {
     const parentRect = parentElement.getBoundingClientRect();
     const menuHeight = menuRect.height;
 
+    // Get toolbar/header height to avoid positioning menus behind it
+    const header = document.querySelector('.header');
+    const collapsibleHeader = document.getElementById('collapsibleHeader');
+    let headerBottom = 0;
+    if (header) headerBottom = header.getBoundingClientRect().bottom;
+    if (collapsibleHeader) {
+      const collapsibleRect = collapsibleHeader.getBoundingClientRect();
+      headerBottom = Math.max(headerBottom, collapsibleRect.bottom);
+    }
+
     // Calculate available space above and below the parent element
-    const spaceAbove = parentRect.top;
+    // spaceAbove should exclude the header/toolbar area
+    const spaceAbove = parentRect.top - headerBottom;
     const spaceBelow = viewportHeight - parentRect.bottom;
 
     // Reset styles
@@ -2369,12 +2380,12 @@ function repositionMenuIfNeeded(menu, parentElement) {
       // More space below - constrain height
       positionAbove = false;
       needsConstraint = true;
-      constrainedHeight = Math.max(spaceBelow - 8, 100);
+      constrainedHeight = Math.max(spaceBelow - 16, 100);
     } else {
       // More space above - constrain height
       positionAbove = true;
       needsConstraint = true;
-      constrainedHeight = Math.max(spaceAbove - 8, 100);
+      constrainedHeight = Math.max(spaceAbove - 16, 100);
     }
 
     // Apply positioning
@@ -2400,19 +2411,25 @@ function repositionMenuIfNeeded(menu, parentElement) {
     requestAnimationFrame(() => {
       const finalRect = menu.getBoundingClientRect();
 
-      // Check if menu extends beyond top of viewport
-      if (finalRect.top < 0) {
-        const overflow = Math.abs(finalRect.top);
+      // Check if menu extends beyond top of viewport (header area)
+      if (finalRect.top < headerBottom) {
+        const overflow = headerBottom - finalRect.top;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${currentMaxHeight - overflow - 8}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 8, 100)}px`;
         menu.style.overflowY = 'auto';
+        // Also adjust top position to be below header
+        if (positionAbove) {
+          menu.style.top = `${headerBottom + 8}px`;
+          menu.style.bottom = 'auto';
+          menu.style.position = 'fixed';
+        }
       }
 
       // Check if menu extends beyond bottom of viewport
       if (finalRect.bottom > viewportHeight) {
         const overflow = finalRect.bottom - viewportHeight;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${currentMaxHeight - overflow - 8}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 8, 100)}px`;
         menu.style.overflowY = 'auto';
       }
     });
@@ -2833,6 +2850,7 @@ function closeAllMenus() {
     menu.style.marginBottom = '';
     menu.style.maxHeight = '';
     menu.style.overflowY = '';
+    menu.style.position = '';
   });
   settingsMenu.classList.remove('show');
   themeMenu.classList.remove('show');
