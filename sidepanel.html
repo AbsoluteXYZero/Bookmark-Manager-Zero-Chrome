@@ -82,6 +82,36 @@
       transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
+    /* Scrollbar styling to match theme */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--md-sys-color-outline) var(--md-sys-color-surface-container);
+    }
+
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: var(--md-sys-color-surface-container);
+      border-radius: 4px;
+    }
+
+    *::-webkit-scrollbar-thumb {
+      background: var(--md-sys-color-outline);
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: var(--md-sys-color-on-surface-variant);
+    }
+
+    *::-webkit-scrollbar-thumb:active {
+      background: var(--md-sys-color-on-surface);
+    }
+
     .header {
       background: linear-gradient(135deg, var(--md-sys-color-surface) 0%, var(--md-sys-color-surface-variant) 100%);
       backdrop-filter: blur(20px);
