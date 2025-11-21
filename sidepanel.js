@@ -404,6 +404,7 @@ let displayOptions = {
 };
 let currentEditItem = null;
 let zoomLevel = 80;
+let guiScale = 100; // GUI scale for header/toolbar/menus
 let checkedBookmarks = new Set(); // Track which bookmarks have been checked to prevent infinite loops
 let scanCancelled = false; // Flag to cancel ongoing scans
 let linkCheckingEnabled = true; // Toggle for link checking
@@ -475,6 +476,8 @@ const backgroundScaleSlider = document.getElementById('backgroundScale');
 const scaleValue = document.getElementById('scaleValue');
 const dragModeOverlay = document.getElementById('dragModeOverlay');
 const closeDragModeBtn = document.getElementById('closeDragModeBtn');
+const guiScaleSlider = document.getElementById('guiScaleSlider');
+const guiScaleValue = document.getElementById('guiScaleValue');
 
 // Add hover effects to Exit & Save button (CSP-compliant)
 closeDragModeBtn.addEventListener('mouseover', () => {
@@ -521,6 +524,7 @@ async function init() {
   loadTheme();
   loadView();
   loadZoom();
+  loadGuiScale();
   loadCheckingSettings();
   await loadWhitelist();
   await loadSafetyHistory();
@@ -751,6 +755,29 @@ function loadZoom() {
     applyZoom();
     updateZoomDisplay();
   });
+}
+
+// Load GUI scale preference
+function loadGuiScale() {
+  const savedScale = localStorage.getItem('guiScale');
+  guiScale = savedScale ? parseInt(savedScale) : 100;
+  applyGuiScale();
+  if (guiScaleSlider) guiScaleSlider.value = guiScale;
+  if (guiScaleValue) guiScaleValue.textContent = `${guiScale}%`;
+}
+
+// Apply GUI scale to header, toolbar, filters, and status bar
+function applyGuiScale() {
+  const scaleFactor = guiScale / 100;
+
+  // Target elements: header, search, toolbar, filters, display options, status bar
+  const header = document.querySelector('.header');
+  const collapsibleHeader = document.getElementById('collapsibleHeader');
+  const scanStatusBar = document.querySelector('.scan-status-bar');
+
+  if (header) header.style.fontSize = `${scaleFactor}em`;
+  if (collapsibleHeader) collapsibleHeader.style.fontSize = `${scaleFactor}em`;
+  if (scanStatusBar) scanStatusBar.style.fontSize = `${scaleFactor}em`;
 }
 
 // Load checking settings from localStorage
@@ -4733,6 +4760,14 @@ function setupEventListeners() {
   zoomSlider.addEventListener('input', (e) => {
     const newZoom = parseInt(e.target.value);
     setZoom(newZoom);
+  });
+
+  // GUI scale slider
+  guiScaleSlider.addEventListener('input', (e) => {
+    guiScale = parseInt(e.target.value);
+    guiScaleValue.textContent = `${guiScale}%`;
+    applyGuiScale();
+    localStorage.setItem('guiScale', guiScale);
   });
 
   // Settings menu

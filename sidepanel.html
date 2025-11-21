@@ -1790,6 +1790,20 @@
               Click "Done" to lock in your changes
             </div>
           </div>
+          <label class="action-btn" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="icon">
+                <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M3,3H21V7H3V3M3,10H21V14H3V10M3,17H21V21H3V17Z"/>
+                </svg>
+              </span>
+              <span>GUI Scale</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <input type="range" id="guiScaleSlider" min="80" max="140" value="100" step="5" style="width: 80px; cursor: pointer;">
+              <span id="guiScaleValue" style="min-width: 40px; text-align: right; font-size: 11px;">100%</span>
+            </div>
+          </label>
           <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
           <label class="action-btn" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px;">
