@@ -1247,6 +1247,20 @@
       height: 10px;
     }
 
+    /* Smaller status icons in denser grid views to prevent overlap */
+    .content.grid-view.grid-4 .status-icon,
+    .content.grid-view.grid-5 .status-icon,
+    .content.grid-view.grid-6 .status-icon {
+      width: 8px;
+      height: 8px;
+    }
+
+    /* Adjust positioning for smaller grid views */
+    .content.grid-view.grid-5 .status-indicators,
+    .content.grid-view.grid-6 .status-indicators {
+      gap: 1px;
+    }
+
     /* Preview in grid view - always visible */
     .content.grid-view .bookmark-preview-container {
       width: 100% !important;
