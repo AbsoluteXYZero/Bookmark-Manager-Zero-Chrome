@@ -467,6 +467,9 @@ const backgroundSizeSelect = document.getElementById('backgroundSize');
 const repositionBackgroundBtn = document.getElementById('repositionBackground');
 const backgroundScaleSlider = document.getElementById('backgroundScale');
 const scaleValue = document.getElementById('scaleValue');
+const dragModeOverlay = document.getElementById('dragModeOverlay');
+const closeDragModeBtn = document.getElementById('closeDragModeBtn');
+const closeDragModeOverlay = document.getElementById('closeDragModeOverlay');
 
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
@@ -4936,10 +4939,11 @@ function setupEventListeners() {
     let dragStartX = 0;
     let dragStartY = 0;
 
+    // Show the drag mode overlay and close all menus
+    dragModeOverlay.style.display = 'flex';
+    closeAllMenus();
+
     // Enable dragging
-    repositionBackgroundBtn.textContent = 'Dragging... (Click to Stop)';
-    repositionBackgroundBtn.style.background = 'var(--md-sys-color-primary)';
-    repositionBackgroundBtn.style.color = 'var(--md-sys-color-on-primary)';
     bgOverlay.style.cursor = 'move';
     bgOverlay.style.pointerEvents = 'auto';
 
@@ -5018,24 +5022,20 @@ function setupEventListeners() {
       );
     };
 
-    const stopDragging = (stopEvent) => {
-      if (stopEvent) {
-        stopEvent.preventDefault();
-        stopEvent.stopPropagation();
-      }
-
+    const stopDragging = () => {
       isDragging = false;
       bgOverlay.style.cursor = 'default';
       bgOverlay.style.pointerEvents = 'none';
-      repositionBackgroundBtn.textContent = 'Drag to Move';
-      repositionBackgroundBtn.style.background = 'var(--md-sys-color-surface-variant)';
-      repositionBackgroundBtn.style.color = 'var(--md-sys-color-on-surface-variant)';
+
+      // Hide the overlay
+      dragModeOverlay.style.display = 'none';
 
       bgOverlay.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('wheel', handleWheel);
-      repositionBackgroundBtn.removeEventListener('click', stopDragging);
+      closeDragModeBtn.removeEventListener('click', stopDragging);
+      closeDragModeOverlay.removeEventListener('click', stopDragging);
 
       // Save final position
       localStorage.setItem('backgroundPositionX', currentPosX);
@@ -5047,11 +5047,9 @@ function setupEventListeners() {
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Replace click handler with stop dragging
-    repositionBackgroundBtn.removeEventListener('click', arguments.callee);
-    setTimeout(() => {
-      repositionBackgroundBtn.addEventListener('click', stopDragging);
-    }, 10);
+    // Set up overlay close handlers
+    closeDragModeBtn.addEventListener('click', stopDragging);
+    closeDragModeOverlay.addEventListener('click', stopDragging);
   });
 
   // Load saved background image on page load
