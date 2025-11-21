@@ -4823,8 +4823,10 @@ function setupEventListeners() {
   // Theme menu
   themeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    themeMenu.classList.toggle('show');
-    if (themeMenu.classList.contains('show')) {
+    const wasOpen = themeMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      themeMenu.classList.add('show');
       adjustDropdownPosition(themeMenu);
     }
   });
@@ -4841,8 +4843,10 @@ function setupEventListeners() {
   // View menu
   viewBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    viewMenu.classList.toggle('show');
-    if (viewMenu.classList.contains('show')) {
+    const wasOpen = viewMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      viewMenu.classList.add('show');
       adjustDropdownPosition(viewMenu);
     }
   });
@@ -4859,8 +4863,10 @@ function setupEventListeners() {
   // Zoom menu
   zoomBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    zoomMenu.classList.toggle('show');
-    if (zoomMenu.classList.contains('show')) {
+    const wasOpen = zoomMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      zoomMenu.classList.add('show');
       adjustDropdownPosition(zoomMenu);
     }
   });
@@ -4888,8 +4894,10 @@ function setupEventListeners() {
   // Settings menu
   settingsBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    settingsMenu.classList.toggle('show');
-    if (settingsMenu.classList.contains('show')) {
+    const wasOpen = settingsMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      settingsMenu.classList.add('show');
       positionFixedDropdown(settingsMenu, settingsBtn);
       // Update cache size display when menu opens
       await updateCacheSizeDisplay();
