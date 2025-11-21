@@ -463,6 +463,10 @@ const backgroundOpacitySlider = document.getElementById('backgroundOpacity');
 const backgroundBlurSlider = document.getElementById('backgroundBlur');
 const opacityValue = document.getElementById('opacityValue');
 const blurValue = document.getElementById('blurValue');
+const backgroundSizeSelect = document.getElementById('backgroundSize');
+const backgroundPositionSelect = document.getElementById('backgroundPosition');
+const backgroundScaleSlider = document.getElementById('backgroundScale');
+const scaleValue = document.getElementById('scaleValue');
 
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
@@ -4693,7 +4697,7 @@ function setupEventListeners() {
   loadSavedAccentColor();
 
   // Background image functionality
-  function applyBackgroundImage(imageData, opacity, blur) {
+  function applyBackgroundImage(imageData, opacity, blur, size, position, scale) {
     if (imageData) {
       // Create or update background overlay
       let bgOverlay = document.getElementById('background-overlay');
@@ -4708,8 +4712,6 @@ function setupEventListeners() {
           height: 100%;
           z-index: 0;
           pointer-events: none;
-          background-size: cover;
-          background-position: center;
           background-repeat: no-repeat;
         `;
         document.body.insertBefore(bgOverlay, document.body.firstChild);
@@ -4720,10 +4722,36 @@ function setupEventListeners() {
           container.style.position = 'relative';
           container.style.zIndex = '1';
         }
+
+        // Make sure status bar has higher z-index
+        const statusBar = document.getElementById('scanStatusBar');
+        if (statusBar) {
+          statusBar.style.position = 'relative';
+          statusBar.style.zIndex = '2';
+        }
       }
       bgOverlay.style.backgroundImage = `url(${imageData})`;
       bgOverlay.style.opacity = opacity / 100;
       bgOverlay.style.filter = `blur(${blur}px)`;
+      bgOverlay.style.backgroundSize = size || 'cover';
+      bgOverlay.style.backgroundPosition = position || 'center';
+
+      // Apply scale by using transform on a pseudo-background approach
+      // For simplicity, we'll scale by adjusting background-size when it's not a keyword
+      if (scale && scale != 100) {
+        const scalePercent = scale / 100;
+        if (size === 'cover' || size === 'contain') {
+          // For cover/contain, we need to use transform approach
+          bgOverlay.style.transform = `scale(${scalePercent})`;
+          bgOverlay.style.transformOrigin = position || 'center';
+        } else if (size === 'auto' || size === '100% 100%') {
+          // For auto/stretch, adjust the size directly
+          const sizeValue = size === 'auto' ? 'auto' : '100%';
+          bgOverlay.style.backgroundSize = `calc(${sizeValue} * ${scalePercent})`;
+        }
+      } else {
+        bgOverlay.style.transform = 'none';
+      }
     } else {
       // Remove background overlay
       const bgOverlay = document.getElementById('background-overlay');
@@ -4737,6 +4765,9 @@ function setupEventListeners() {
     const savedImage = localStorage.getItem('backgroundImage');
     const savedOpacity = localStorage.getItem('backgroundOpacity');
     const savedBlur = localStorage.getItem('backgroundBlur');
+    const savedSize = localStorage.getItem('backgroundSize');
+    const savedPosition = localStorage.getItem('backgroundPosition');
+    const savedScale = localStorage.getItem('backgroundScale');
 
     if (savedOpacity) {
       backgroundOpacitySlider.value = savedOpacity;
@@ -4746,9 +4777,26 @@ function setupEventListeners() {
       backgroundBlurSlider.value = savedBlur;
       blurValue.textContent = `${savedBlur}px`;
     }
+    if (savedSize) {
+      backgroundSizeSelect.value = savedSize;
+    }
+    if (savedPosition) {
+      backgroundPositionSelect.value = savedPosition;
+    }
+    if (savedScale) {
+      backgroundScaleSlider.value = savedScale;
+      scaleValue.textContent = `${savedScale}%`;
+    }
 
     if (savedImage) {
-      applyBackgroundImage(savedImage, savedOpacity || 100, savedBlur || 0);
+      applyBackgroundImage(
+        savedImage,
+        savedOpacity || 100,
+        savedBlur || 0,
+        savedSize || 'cover',
+        savedPosition || 'center',
+        savedScale || 100
+      );
     }
   }
 
@@ -4767,7 +4815,14 @@ function setupEventListeners() {
       reader.onload = (event) => {
         const imageData = event.target.result;
         localStorage.setItem('backgroundImage', imageData);
-        applyBackgroundImage(imageData, backgroundOpacitySlider.value, backgroundBlurSlider.value);
+        applyBackgroundImage(
+          imageData,
+          backgroundOpacitySlider.value,
+          backgroundBlurSlider.value,
+          backgroundSizeSelect.value,
+          backgroundPositionSelect.value,
+          backgroundScaleSlider.value
+        );
       };
       reader.readAsDataURL(file);
     }
@@ -4789,7 +4844,14 @@ function setupEventListeners() {
     localStorage.setItem('backgroundOpacity', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
-      applyBackgroundImage(savedImage, value, backgroundBlurSlider.value);
+      applyBackgroundImage(
+        savedImage,
+        value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        backgroundPositionSelect.value,
+        backgroundScaleSlider.value
+      );
     }
   });
 
@@ -4800,7 +4862,66 @@ function setupEventListeners() {
     localStorage.setItem('backgroundBlur', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
-      applyBackgroundImage(savedImage, backgroundOpacitySlider.value, value);
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        value,
+        backgroundSizeSelect.value,
+        backgroundPositionSelect.value,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Size selector
+  backgroundSizeSelect.addEventListener('change', (e) => {
+    const value = e.target.value;
+    localStorage.setItem('backgroundSize', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        value,
+        backgroundPositionSelect.value,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Position selector
+  backgroundPositionSelect.addEventListener('change', (e) => {
+    const value = e.target.value;
+    localStorage.setItem('backgroundPosition', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        value,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Scale slider
+  backgroundScaleSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    scaleValue.textContent = `${value}%`;
+    localStorage.setItem('backgroundScale', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        backgroundPositionSelect.value,
+        value
+      );
     }
   });
 

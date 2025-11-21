@@ -1984,6 +1984,34 @@
                   <input type="range" id="backgroundBlur" min="0" max="20" value="0" style="width: 120px; cursor: pointer;">
                   <span id="blurValue" style="min-width: 35px; text-align: right;">0px</span>
                 </label>
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                  <span>Size</span>
+                  <select id="backgroundSize" style="width: 120px; cursor: pointer; padding: 2px 4px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 11px;">
+                    <option value="cover">Cover</option>
+                    <option value="contain">Contain</option>
+                    <option value="auto">Auto</option>
+                    <option value="100% 100%">Stretch</option>
+                  </select>
+                </label>
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                  <span>Position</span>
+                  <select id="backgroundPosition" style="width: 120px; cursor: pointer; padding: 2px 4px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 11px;">
+                    <option value="center">Center</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="top left">Top Left</option>
+                    <option value="top right">Top Right</option>
+                    <option value="bottom left">Bottom Left</option>
+                    <option value="bottom right">Bottom Right</option>
+                  </select>
+                </label>
+                <label style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+                  <span>Scale</span>
+                  <input type="range" id="backgroundScale" min="50" max="200" value="100" style="width: 120px; cursor: pointer;">
+                  <span id="scaleValue" style="min-width: 35px; text-align: right;">100%</span>
+                </label>
               </div>
             </div>
           </div>
