@@ -4795,10 +4795,10 @@ function setupEventListeners() {
         savedImage,
         savedOpacity || 100,
         savedBlur || 0,
-        savedSize || 'cover',
+        savedSize || 'contain',
         savedPositionX || 50,
         savedPositionY || 50,
-        savedScale || 100
+        savedScale || 200
       );
     }
   }
