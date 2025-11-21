@@ -1438,6 +1438,9 @@ Redirects to domain parking service" data-status-message="${escapedTooltip}">
 function getShieldHtml(safetyStatus, url, safetySources = []) {
   const encodedUrl = encodeURIComponent(url);
 
+  // Check if bookmark is whitelisted
+  const isWhitelisted = safetySources && safetySources.includes('Whitelisted by user');
+
   // Build sources text for unsafe tooltip
   const sourcesText = safetySources && safetySources.length > 0
     ? `\n⛔ Detected by: ${safetySources.join(', ')}`
@@ -1451,13 +1454,14 @@ function getShieldHtml(safetyStatus, url, safetySources = []) {
   // Build full messages for click popup
   const messages = {
     'safe': 'Security Check: Safe\n\n✓ Not found in malware databases\n✓ Passed URLhaus + BlockList checks',
+    'whitelisted': 'Security Check: Whitelisted\n\n✓ Manually trusted by user\n✓ Bypasses security checks',
     'warning': `Security Check: Warning\n\n${warningText}`,
     'unsafe': `Security Check: UNSAFE\n\n⛔ Malicious domain detected!${sourcesText}\n⛔ DO NOT VISIT - Exercise extreme caution!`,
     'checking': 'Security Check: Analyzing\n\nChecking URL security patterns...',
     'unknown': 'Security Check: Unknown\n\nUnable to determine safety status\nNot in whitelist or blacklist'
   };
 
-  const message = messages[safetyStatus] || messages['unknown'];
+  const message = isWhitelisted ? messages['whitelisted'] : (messages[safetyStatus] || messages['unknown']);
   const escapedMessage = message.replace(/"/g, '&quot;');
 
   const shieldSvgs = {
@@ -1465,6 +1469,15 @@ function getShieldHtml(safetyStatus, url, safetySources = []) {
       <span class="shield-indicator shield-safe clickable-status" title="Security Check: Safe
 ✓ Not found in malware databases
 ✓ Passed URLhaus + BlockList checks" data-status-message="${escapedMessage}">
+        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
+        </svg>
+      </span>
+    `,
+    'whitelisted': `
+      <span class="shield-indicator shield-whitelisted clickable-status" title="Security Check: Whitelisted
+✓ Manually trusted by user
+✓ Bypasses security checks" data-status-message="${escapedMessage}">
         <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
         </svg>
@@ -1506,7 +1519,7 @@ Not in whitelist or blacklist" data-status-message="${escapedMessage}">
     `
   };
 
-  return shieldSvgs[safetyStatus] || shieldSvgs['unknown'];
+  return isWhitelisted ? shieldSvgs['whitelisted'] : (shieldSvgs[safetyStatus] || shieldSvgs['unknown']);
 }
 
 // Create folder element
