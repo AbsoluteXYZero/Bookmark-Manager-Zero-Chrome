@@ -464,7 +464,7 @@ const backgroundBlurSlider = document.getElementById('backgroundBlur');
 const opacityValue = document.getElementById('opacityValue');
 const blurValue = document.getElementById('blurValue');
 const backgroundSizeSelect = document.getElementById('backgroundSize');
-const backgroundPositionSelect = document.getElementById('backgroundPosition');
+const repositionBackgroundBtn = document.getElementById('repositionBackground');
 const backgroundScaleSlider = document.getElementById('backgroundScale');
 const scaleValue = document.getElementById('scaleValue');
 
@@ -4697,7 +4697,7 @@ function setupEventListeners() {
   loadSavedAccentColor();
 
   // Background image functionality
-  function applyBackgroundImage(imageData, opacity, blur, size, position, scale) {
+  function applyBackgroundImage(imageData, opacity, blur, size, positionX, positionY, scale) {
     if (imageData) {
       // Create or update background overlay
       let bgOverlay = document.getElementById('background-overlay');
@@ -4734,16 +4734,15 @@ function setupEventListeners() {
       bgOverlay.style.opacity = opacity / 100;
       bgOverlay.style.filter = `blur(${blur}px)`;
       bgOverlay.style.backgroundSize = size || 'cover';
-      bgOverlay.style.backgroundPosition = position || 'center';
+      bgOverlay.style.backgroundPosition = `${positionX || 50}% ${positionY || 50}%`;
 
       // Apply scale by using transform on a pseudo-background approach
-      // For simplicity, we'll scale by adjusting background-size when it's not a keyword
       if (scale && scale != 100) {
         const scalePercent = scale / 100;
         if (size === 'cover' || size === 'contain') {
           // For cover/contain, we need to use transform approach
           bgOverlay.style.transform = `scale(${scalePercent})`;
-          bgOverlay.style.transformOrigin = position || 'center';
+          bgOverlay.style.transformOrigin = `${positionX || 50}% ${positionY || 50}%`;
         } else if (size === 'auto' || size === '100% 100%') {
           // For auto/stretch, adjust the size directly
           const sizeValue = size === 'auto' ? 'auto' : '100%';
@@ -4766,7 +4765,8 @@ function setupEventListeners() {
     const savedOpacity = localStorage.getItem('backgroundOpacity');
     const savedBlur = localStorage.getItem('backgroundBlur');
     const savedSize = localStorage.getItem('backgroundSize');
-    const savedPosition = localStorage.getItem('backgroundPosition');
+    const savedPositionX = localStorage.getItem('backgroundPositionX');
+    const savedPositionY = localStorage.getItem('backgroundPositionY');
     const savedScale = localStorage.getItem('backgroundScale');
 
     if (savedOpacity) {
@@ -4780,9 +4780,6 @@ function setupEventListeners() {
     if (savedSize) {
       backgroundSizeSelect.value = savedSize;
     }
-    if (savedPosition) {
-      backgroundPositionSelect.value = savedPosition;
-    }
     if (savedScale) {
       backgroundScaleSlider.value = savedScale;
       scaleValue.textContent = `${savedScale}%`;
@@ -4794,7 +4791,8 @@ function setupEventListeners() {
         savedOpacity || 100,
         savedBlur || 0,
         savedSize || 'cover',
-        savedPosition || 'center',
+        savedPositionX || 50,
+        savedPositionY || 50,
         savedScale || 100
       );
     }
@@ -4815,12 +4813,15 @@ function setupEventListeners() {
       reader.onload = (event) => {
         const imageData = event.target.result;
         localStorage.setItem('backgroundImage', imageData);
+        const positionX = localStorage.getItem('backgroundPositionX') || 50;
+        const positionY = localStorage.getItem('backgroundPositionY') || 50;
         applyBackgroundImage(
           imageData,
           backgroundOpacitySlider.value,
           backgroundBlurSlider.value,
           backgroundSizeSelect.value,
-          backgroundPositionSelect.value,
+          positionX,
+          positionY,
           backgroundScaleSlider.value
         );
       };
@@ -4844,12 +4845,15 @@ function setupEventListeners() {
     localStorage.setItem('backgroundOpacity', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
       applyBackgroundImage(
         savedImage,
         value,
         backgroundBlurSlider.value,
         backgroundSizeSelect.value,
-        backgroundPositionSelect.value,
+        positionX,
+        positionY,
         backgroundScaleSlider.value
       );
     }
@@ -4862,12 +4866,15 @@ function setupEventListeners() {
     localStorage.setItem('backgroundBlur', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
       applyBackgroundImage(
         savedImage,
         backgroundOpacitySlider.value,
         value,
         backgroundSizeSelect.value,
-        backgroundPositionSelect.value,
+        positionX,
+        positionY,
         backgroundScaleSlider.value
       );
     }
@@ -4879,29 +4886,15 @@ function setupEventListeners() {
     localStorage.setItem('backgroundSize', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
       applyBackgroundImage(
         savedImage,
         backgroundOpacitySlider.value,
         backgroundBlurSlider.value,
         value,
-        backgroundPositionSelect.value,
-        backgroundScaleSlider.value
-      );
-    }
-  });
-
-  // Position selector
-  backgroundPositionSelect.addEventListener('change', (e) => {
-    const value = e.target.value;
-    localStorage.setItem('backgroundPosition', value);
-    const savedImage = localStorage.getItem('backgroundImage');
-    if (savedImage) {
-      applyBackgroundImage(
-        savedImage,
-        backgroundOpacitySlider.value,
-        backgroundBlurSlider.value,
-        backgroundSizeSelect.value,
-        value,
+        positionX,
+        positionY,
         backgroundScaleSlider.value
       );
     }
@@ -4914,15 +4907,109 @@ function setupEventListeners() {
     localStorage.setItem('backgroundScale', value);
     const savedImage = localStorage.getItem('backgroundImage');
     if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
       applyBackgroundImage(
         savedImage,
         backgroundOpacitySlider.value,
         backgroundBlurSlider.value,
         backgroundSizeSelect.value,
-        backgroundPositionSelect.value,
+        positionX,
+        positionY,
         value
       );
     }
+  });
+
+  // Drag to reposition functionality
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let currentPosX = parseFloat(localStorage.getItem('backgroundPositionX')) || 50;
+  let currentPosY = parseFloat(localStorage.getItem('backgroundPositionY')) || 50;
+
+  repositionBackgroundBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (!savedImage) {
+      return;
+    }
+
+    const bgOverlay = document.getElementById('background-overlay');
+    if (!bgOverlay) return;
+
+    // Enable dragging
+    repositionBackgroundBtn.textContent = 'Dragging... (Click to Stop)';
+    repositionBackgroundBtn.style.background = 'var(--md-sys-color-primary)';
+    repositionBackgroundBtn.style.color = 'var(--md-sys-color-on-primary)';
+    bgOverlay.style.cursor = 'move';
+    bgOverlay.style.pointerEvents = 'auto';
+
+    const handleMouseDown = (event) => {
+      isDragging = true;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      event.preventDefault();
+    };
+
+    const handleMouseMove = (event) => {
+      if (!isDragging) return;
+
+      const deltaX = event.clientX - dragStartX;
+      const deltaY = event.clientY - dragStartY;
+
+      // Convert pixel movement to percentage based on window size
+      const percentX = (deltaX / window.innerWidth) * 100;
+      const percentY = (deltaY / window.innerHeight) * 100;
+
+      currentPosX = Math.max(0, Math.min(100, currentPosX + percentX));
+      currentPosY = Math.max(0, Math.min(100, currentPosY + percentY));
+
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        currentPosX,
+        currentPosY,
+        backgroundScaleSlider.value
+      );
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        localStorage.setItem('backgroundPositionX', currentPosX);
+        localStorage.setItem('backgroundPositionY', currentPosY);
+      }
+    };
+
+    const stopDragging = () => {
+      bgOverlay.style.cursor = 'default';
+      bgOverlay.style.pointerEvents = 'none';
+      repositionBackgroundBtn.textContent = 'Drag to Move';
+      repositionBackgroundBtn.style.background = 'var(--md-sys-color-surface-variant)';
+      repositionBackgroundBtn.style.color = 'var(--md-sys-color-on-surface-variant)';
+
+      bgOverlay.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      repositionBackgroundBtn.removeEventListener('click', stopDragging);
+    };
+
+    bgOverlay.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    // Replace click handler with stop dragging
+    repositionBackgroundBtn.removeEventListener('click', arguments.callee);
+    setTimeout(() => {
+      repositionBackgroundBtn.addEventListener('click', stopDragging);
+    }, 10);
   });
 
   // Load saved background image on page load
