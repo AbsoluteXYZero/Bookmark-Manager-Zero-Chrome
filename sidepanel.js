@@ -4973,12 +4973,14 @@ function setupEventListeners() {
       const percentX = (deltaX / window.innerWidth) * 100;
       const percentY = (deltaY / window.innerHeight) * 100;
 
-      // Allow dragging beyond borders - no clamping
-      currentPosX = currentPosX + percentX;
-      currentPosY = currentPosY + percentY;
+      // Update positions with reasonable limits (-100 to 200%)
+      currentPosX = Math.max(-100, Math.min(200, currentPosX + percentX));
+      currentPosY = Math.max(-100, Math.min(200, currentPosY + percentY));
 
       dragStartX = event.clientX;
       dragStartY = event.clientY;
+
+      console.log('Drag move:', { deltaX, deltaY, percentX, percentY, currentPosX, currentPosY });
 
       applyBackgroundImage(
         savedImage,
