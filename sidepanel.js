@@ -470,6 +470,14 @@ const scaleValue = document.getElementById('scaleValue');
 const dragModeOverlay = document.getElementById('dragModeOverlay');
 const closeDragModeBtn = document.getElementById('closeDragModeBtn');
 
+// Add hover effects to Exit & Save button (CSP-compliant)
+closeDragModeBtn.addEventListener('mouseover', () => {
+  closeDragModeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+});
+closeDragModeBtn.addEventListener('mouseout', () => {
+  closeDragModeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+});
+
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
 const scanProgress = document.getElementById('scanProgress');
