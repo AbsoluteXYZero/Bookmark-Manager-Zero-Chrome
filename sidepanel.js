@@ -4951,6 +4951,11 @@ function setupEventListeners() {
     dragModeOverlay.style.zIndex = '10002';
 
     const handleMouseDown = (event) => {
+      // Don't start dragging if clicking on the exit button
+      if (event.target === closeDragModeBtn || closeDragModeBtn.contains(event.target)) {
+        return;
+      }
+
       isDragging = true;
       dragStartX = event.clientX;
       dragStartY = event.clientY;
@@ -5035,7 +5040,7 @@ function setupEventListeners() {
       dragModeOverlay.style.display = 'none';
       dragModeOverlay.style.zIndex = '100';
 
-      bgOverlay.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('wheel', handleWheel);
@@ -5046,7 +5051,8 @@ function setupEventListeners() {
       localStorage.setItem('backgroundPositionY', currentPosY);
     };
 
-    bgOverlay.addEventListener('mousedown', handleMouseDown);
+    // Listen on document instead of bgOverlay to bypass any blocking elements
+    document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('wheel', handleWheel, { passive: false });
