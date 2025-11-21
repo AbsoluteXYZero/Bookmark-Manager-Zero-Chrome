@@ -476,8 +476,7 @@ const backgroundScaleSlider = document.getElementById('backgroundScale');
 const scaleValue = document.getElementById('scaleValue');
 const dragModeOverlay = document.getElementById('dragModeOverlay');
 const closeDragModeBtn = document.getElementById('closeDragModeBtn');
-const guiScaleSlider = document.getElementById('guiScaleSlider');
-const guiScaleValue = document.getElementById('guiScaleValue');
+const guiScaleSelect = document.getElementById('guiScaleSelect');
 
 // Add hover effects to Exit & Save button (CSP-compliant)
 closeDragModeBtn.addEventListener('mouseover', () => {
@@ -767,13 +766,9 @@ function loadGuiScale() {
   const savedScale = localStorage.getItem('guiScale');
   guiScale = savedScale ? parseInt(savedScale) : 100;
   applyGuiScale();
-  if (guiScaleSlider) {
-    guiScaleSlider.value = guiScale;
-    // Initialize slider progress bar
-    const progress = ((guiScale - 80) / (140 - 80)) * 100;
-    guiScaleSlider.style.setProperty('--zoom-progress', `${progress}%`);
+  if (guiScaleSelect) {
+    guiScaleSelect.value = guiScale;
   }
-  if (guiScaleValue) guiScaleValue.textContent = `${guiScale}%`;
 }
 
 // Apply GUI scale to header, toolbar, filters, and status bar
@@ -786,7 +781,6 @@ function applyGuiScale() {
   const filterBar = document.getElementById('filterBar');
   const displayBar = document.getElementById('displayBar');
   const scanStatusBar = document.querySelector('.scan-status-bar');
-  const zoomMenu = document.getElementById('zoomMenu');
 
   // Use CSS zoom property for proper scaling of all elements (text, spacing, borders, etc.)
   if (header) header.style.zoom = scaleFactor;
@@ -794,9 +788,6 @@ function applyGuiScale() {
   if (filterBar) filterBar.style.zoom = scaleFactor;
   if (displayBar) displayBar.style.zoom = scaleFactor;
   if (scanStatusBar) scanStatusBar.style.zoom = scaleFactor;
-
-  // Counter-scale the zoom menu so it doesn't resize while adjusting
-  if (zoomMenu) zoomMenu.style.zoom = 1 / scaleFactor;
 }
 
 // Load checking settings from localStorage
@@ -4788,13 +4779,11 @@ function setupEventListeners() {
     updateSliderProgress(e.target, newZoom, 50, 200);
   });
 
-  // GUI scale slider
-  guiScaleSlider.addEventListener('input', (e) => {
+  // GUI scale select
+  guiScaleSelect.addEventListener('change', (e) => {
     guiScale = parseInt(e.target.value);
-    guiScaleValue.textContent = `${guiScale}%`;
     applyGuiScale();
     localStorage.setItem('guiScale', guiScale);
-    updateSliderProgress(e.target, guiScale, 80, 140);
   });
 
   // Settings menu
