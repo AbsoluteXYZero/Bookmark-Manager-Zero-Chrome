@@ -479,9 +479,20 @@
       content: 'Drop here to move to root';
     }
 
-    /* Top row container for shield, favicon, and chainlink */
-    .bookmark-top-row {
+    /* List view: vertical status indicators (shield over chainlink) + separate favicon */
+    .status-indicators {
       display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      flex-shrink: 0;
+      min-width: 16px;
+    }
+
+    /* Grid view only: horizontal top row (shield → favicon → chainlink) */
+    .bookmark-top-row {
+      display: none; /* Hidden in list view */
       flex-direction: row;
       align-items: center;
       gap: 6px;
@@ -1227,8 +1238,17 @@
       padding: 2px;
     }
 
-    /* Grid view: center shield → favicon → chainlink at top */
+    /* Grid view: hide list view elements, show bookmark-top-row */
+    .content.grid-view .status-indicators {
+      display: none;
+    }
+
+    .content.grid-view > .bookmark-item > .bookmark-favicon {
+      display: none;
+    }
+
     .content.grid-view .bookmark-top-row {
+      display: flex;  /* Show in grid view */
       width: 100%;
       justify-content: center;
       gap: 4px;

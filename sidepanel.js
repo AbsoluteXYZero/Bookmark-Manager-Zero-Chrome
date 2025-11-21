@@ -1639,7 +1639,15 @@ function createBookmarkElement(bookmark) {
   const safetySources = bookmark.safetySources || [];
 
   // Build status indicators HTML based on display options
-  // Split shield and chainlink for flexible layout
+  let statusIndicatorsHtml = '';
+  if (displayOptions.safetyStatus) {
+    statusIndicatorsHtml += getShieldHtml(safetyStatus, bookmark.url, safetySources);
+  }
+  if (displayOptions.liveStatus) {
+    statusIndicatorsHtml += getStatusDotHtml(linkStatus);
+  }
+
+  // Also build separate shield and chainlink for grid view
   let shieldHtml = '';
   if (displayOptions.safetyStatus) {
     shieldHtml = getShieldHtml(safetyStatus, bookmark.url, safetySources);
@@ -1672,6 +1680,10 @@ function createBookmarkElement(bookmark) {
 
   bookmarkDiv.innerHTML = `
     ${multiSelectMode ? `<input type="checkbox" class="item-checkbox" data-id="${bookmark.id}" ${selectedItems.has(bookmark.id) ? 'checked' : ''} aria-label="Select ${escapeHtml(bookmarkTitle)}">` : ''}
+    <div class="status-indicators">
+      ${statusIndicatorsHtml}
+    </div>
+    ${faviconHtml}
     <div class="bookmark-top-row">
       ${shieldHtml}
       ${faviconHtml}
@@ -1783,6 +1795,7 @@ function createBookmarkElement(bookmark) {
     if (e.target.closest('.bookmark-menu-btn') ||
         e.target.closest('.bookmark-actions') ||
         e.target.closest('.bookmark-preview-container') ||
+        e.target.closest('.status-indicators') ||
         e.target.closest('.bookmark-top-row') ||
         e.target.closest('.item-checkbox')) {
       return;
