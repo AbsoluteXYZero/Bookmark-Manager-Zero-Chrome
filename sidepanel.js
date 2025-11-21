@@ -4981,9 +4981,9 @@ function setupEventListeners() {
       const percentX = (deltaX / window.innerWidth) * 100;
       const percentY = (deltaY / window.innerHeight) * 100;
 
-      // Update positions with reasonable limits (-100 to 200%)
-      currentPosX = Math.max(-100, Math.min(200, currentPosX + percentX));
-      currentPosY = Math.max(-100, Math.min(200, currentPosY + percentY));
+      // Update positions with stricter limits (-50% to 150%)
+      currentPosX = Math.max(-50, Math.min(150, currentPosX + percentX));
+      currentPosY = Math.max(-50, Math.min(150, currentPosY + percentY));
 
       dragStartX = event.clientX;
       dragStartY = event.clientY;
