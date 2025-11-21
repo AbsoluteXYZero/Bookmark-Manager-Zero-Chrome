@@ -1240,15 +1240,15 @@
 
     /* Grid view: hide list view elements, show bookmark-top-row */
     .content.grid-view .status-indicators {
-      display: none;
+      display: none !important;
     }
 
-    .content.grid-view > .bookmark-item > .bookmark-favicon {
-      display: none;
+    .content.grid-view .bookmark-item > .bookmark-favicon {
+      display: none !important;
     }
 
     .content.grid-view .bookmark-top-row {
-      display: flex;  /* Show in grid view */
+      display: flex !important;  /* Show in grid view */
       width: 100%;
       justify-content: center;
       gap: 4px;
