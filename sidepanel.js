@@ -5507,14 +5507,24 @@ function setupEventListeners() {
 
   // Close menus when clicking outside
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.bookmark-actions') &&
-        !e.target.closest('.bookmark-menu-btn') &&
-        !e.target.closest('.bookmark-preview-container') &&
-        !e.target.closest('.settings-menu') &&
-        !e.target.closest('#settingsBtn') &&
-        !e.target.closest('.theme-btn-wrapper') &&
-        !e.target.closest('.view-btn-wrapper') &&
-        !e.target.closest('.zoom-btn-wrapper')) {
+    // Check if click is inside any menu or menu button
+    const clickedInsideMenu = e.target.closest('.bookmark-actions') ||
+                              e.target.closest('#settingsMenu') ||
+                              e.target.closest('#themeMenu') ||
+                              e.target.closest('#viewMenu') ||
+                              e.target.closest('#zoomMenu');
+
+    const clickedMenuButton = e.target.closest('.bookmark-menu-btn') ||
+                              e.target.closest('.folder-menu-btn') ||
+                              e.target.closest('#settingsBtn') ||
+                              e.target.closest('#themeBtn') ||
+                              e.target.closest('#viewBtn') ||
+                              e.target.closest('#zoomBtn');
+
+    const clickedPreview = e.target.closest('.bookmark-preview-container');
+
+    // Close menus if clicking outside of menus, menu buttons, or previews
+    if (!clickedInsideMenu && !clickedMenuButton && !clickedPreview) {
       closeAllMenus();
     }
 
