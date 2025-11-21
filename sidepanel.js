@@ -4736,20 +4736,15 @@ function setupEventListeners() {
       bgOverlay.style.backgroundSize = size || 'cover';
       bgOverlay.style.backgroundPosition = `${positionX || 50}% ${positionY || 50}%`;
 
-      // Apply scale by using transform on a pseudo-background approach
+      // Apply scale by using transform
+      // Keep transform origin at center to avoid conflicts with background-position
       if (scale && scale != 100) {
         const scalePercent = scale / 100;
-        if (size === 'cover' || size === 'contain') {
-          // For cover/contain, we need to use transform approach
-          bgOverlay.style.transform = `scale(${scalePercent})`;
-          bgOverlay.style.transformOrigin = `${positionX || 50}% ${positionY || 50}%`;
-        } else if (size === 'auto' || size === '100% 100%') {
-          // For auto/stretch, adjust the size directly
-          const sizeValue = size === 'auto' ? 'auto' : '100%';
-          bgOverlay.style.backgroundSize = `calc(${sizeValue} * ${scalePercent})`;
-        }
+        bgOverlay.style.transform = `scale(${scalePercent})`;
+        bgOverlay.style.transformOrigin = 'center center';
       } else {
         bgOverlay.style.transform = 'none';
+        bgOverlay.style.transformOrigin = 'center center';
       }
     } else {
       // Remove background overlay
@@ -4923,10 +4918,6 @@ function setupEventListeners() {
 
   // Drag to reposition functionality
   let isDragging = false;
-  let dragStartX = 0;
-  let dragStartY = 0;
-  let currentPosX = parseFloat(localStorage.getItem('backgroundPositionX')) || 50;
-  let currentPosY = parseFloat(localStorage.getItem('backgroundPositionY')) || 50;
 
   repositionBackgroundBtn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -4938,6 +4929,12 @@ function setupEventListeners() {
 
     const bgOverlay = document.getElementById('background-overlay');
     if (!bgOverlay) return;
+
+    // Reload current position from localStorage when entering drag mode
+    let currentPosX = parseFloat(localStorage.getItem('backgroundPositionX')) || 50;
+    let currentPosY = parseFloat(localStorage.getItem('backgroundPositionY')) || 50;
+    let dragStartX = 0;
+    let dragStartY = 0;
 
     // Enable dragging
     repositionBackgroundBtn.textContent = 'Dragging... (Click to Stop)';
@@ -4951,6 +4948,7 @@ function setupEventListeners() {
       dragStartX = event.clientX;
       dragStartY = event.clientY;
       event.preventDefault();
+      event.stopPropagation();
     };
 
     const handleMouseMove = (event) => {
@@ -4963,8 +4961,9 @@ function setupEventListeners() {
       const percentX = (deltaX / window.innerWidth) * 100;
       const percentY = (deltaY / window.innerHeight) * 100;
 
-      currentPosX = Math.max(0, Math.min(100, currentPosX + percentX));
-      currentPosY = Math.max(0, Math.min(100, currentPosY + percentY));
+      // Allow dragging beyond borders - no clamping
+      currentPosX = currentPosX + percentX;
+      currentPosY = currentPosY + percentY;
 
       dragStartX = event.clientX;
       dragStartY = event.clientY;
@@ -4988,7 +4987,13 @@ function setupEventListeners() {
       }
     };
 
-    const stopDragging = () => {
+    const stopDragging = (stopEvent) => {
+      if (stopEvent) {
+        stopEvent.preventDefault();
+        stopEvent.stopPropagation();
+      }
+
+      isDragging = false;
       bgOverlay.style.cursor = 'default';
       bgOverlay.style.pointerEvents = 'none';
       repositionBackgroundBtn.textContent = 'Drag to Move';
@@ -4999,6 +5004,10 @@ function setupEventListeners() {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       repositionBackgroundBtn.removeEventListener('click', stopDragging);
+
+      // Save final position
+      localStorage.setItem('backgroundPositionX', currentPosX);
+      localStorage.setItem('backgroundPositionY', currentPosY);
     };
 
     bgOverlay.addEventListener('mousedown', handleMouseDown);
