@@ -4987,6 +4987,37 @@ function setupEventListeners() {
       }
     };
 
+    const handleWheel = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      // Get current scale from slider
+      let currentScale = parseFloat(backgroundScaleSlider.value);
+
+      // Adjust scale based on scroll direction
+      // Scroll down (deltaY > 0) = zoom out, Scroll up (deltaY < 0) = zoom in
+      const scaleChange = event.deltaY > 0 ? -5 : 5;
+      currentScale = Math.max(50, Math.min(200, currentScale + scaleChange));
+
+      // Update slider and display
+      backgroundScaleSlider.value = currentScale;
+      scaleValue.textContent = `${currentScale}%`;
+
+      // Save to localStorage
+      localStorage.setItem('backgroundScale', currentScale);
+
+      // Apply the new scale
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        currentPosX,
+        currentPosY,
+        currentScale
+      );
+    };
+
     const stopDragging = (stopEvent) => {
       if (stopEvent) {
         stopEvent.preventDefault();
@@ -5003,6 +5034,7 @@ function setupEventListeners() {
       bgOverlay.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('wheel', handleWheel);
       repositionBackgroundBtn.removeEventListener('click', stopDragging);
 
       // Save final position
@@ -5013,6 +5045,7 @@ function setupEventListeners() {
     bgOverlay.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('wheel', handleWheel, { passive: false });
 
     // Replace click handler with stop dragging
     repositionBackgroundBtn.removeEventListener('click', arguments.callee);
