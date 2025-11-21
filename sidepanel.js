@@ -452,6 +452,17 @@ const clearCacheBtn = document.getElementById('clearCacheBtn');
 const autoClearCacheSelect = document.getElementById('autoClearCache');
 const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
+const accentColorPicker = document.getElementById('accentColorPicker');
+const resetAccentColorBtn = document.getElementById('resetAccentColor');
+const doneAccentColorBtn = document.getElementById('doneAccentColor');
+const accentColorTooltip = document.getElementById('accentColorTooltip');
+const backgroundImagePicker = document.getElementById('backgroundImagePicker');
+const chooseBackgroundImageBtn = document.getElementById('chooseBackgroundImage');
+const removeBackgroundImageBtn = document.getElementById('removeBackgroundImage');
+const backgroundOpacitySlider = document.getElementById('backgroundOpacity');
+const backgroundBlurSlider = document.getElementById('backgroundBlur');
+const opacityValue = document.getElementById('opacityValue');
+const blurValue = document.getElementById('blurValue');
 
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
@@ -548,6 +559,107 @@ function loadTheme() {
   });
 }
 
+// Store current custom accent color globally
+let currentCustomAccentColor = null;
+
+// Apply custom accent color (global function so it can be called from applyTheme)
+function applyCustomAccentColor(color) {
+  currentCustomAccentColor = color;
+  // Convert hex to RGB for variations
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+
+  // Create lighter container color (add 80 to each channel, cap at 255)
+  const containerR = Math.min(255, r + 80);
+  const containerG = Math.min(255, g + 80);
+  const containerB = Math.min(255, b + 80);
+  const containerColor = `#${containerR.toString(16).padStart(2, '0')}${containerG.toString(16).padStart(2, '0')}${containerB.toString(16).padStart(2, '0')}`;
+
+  // Remove existing custom accent style if it exists
+  let styleTag = document.getElementById('custom-accent-style');
+  if (styleTag) {
+    styleTag.remove();
+  }
+
+  // Inject a style tag with higher specificity selectors
+  styleTag = document.createElement('style');
+  styleTag.id = 'custom-accent-style';
+  styleTag.textContent = `
+    /* Use @layer to ensure these rules take priority */
+    @layer custom-accent {
+      html:root {
+        --md-sys-color-primary: ${color} !important;
+        --md-sys-color-primary-container: ${containerColor} !important;
+        --md-sys-color-secondary: ${color} !important;
+      }
+      html body.light,
+      html body.blue-dark,
+      html body.dark {
+        --md-sys-color-primary: ${color} !important;
+        --md-sys-color-primary-container: ${containerColor} !important;
+        --md-sys-color-secondary: ${color} !important;
+      }
+      /* Directly override border-left on folder-children */
+      .folder-children {
+        border-left: 2px solid ${color} !important;
+      }
+    }
+  `;
+  // Append to body instead of head for later cascade position
+  if (document.body) {
+    document.body.appendChild(styleTag);
+  } else {
+    document.head.appendChild(styleTag);
+  }
+
+  // Directly update all existing .folder-children elements
+  // This bypasses CSS variable resolution issues
+  document.querySelectorAll('.folder-children').forEach(element => {
+    element.style.setProperty('border-left-color', color, 'important');
+  });
+}
+
+// Set up MutationObserver to apply custom color to new folder-children elements
+if (typeof window.folderChildrenObserver === 'undefined') {
+  window.folderChildrenObserver = new MutationObserver((mutations) => {
+    if (!currentCustomAccentColor) return;
+
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === 1) { // Element node
+          // Check if the node itself is folder-children
+          if (node.classList && node.classList.contains('folder-children')) {
+            node.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+          }
+          // Check descendants
+          if (node.querySelectorAll) {
+            node.querySelectorAll('.folder-children').forEach(element => {
+              element.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+            });
+          }
+        }
+      });
+
+      // Also check for class changes (when .show is added)
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const target = mutation.target;
+        if (target.classList && target.classList.contains('folder-children')) {
+          target.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+        }
+      }
+    });
+  });
+
+  // Start observing
+  window.folderChildrenObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class']
+  });
+}
+
 // Apply theme
 function applyTheme() {
   // Remove all theme classes
@@ -555,6 +667,12 @@ function applyTheme() {
 
   // Add current theme class
   document.body.classList.add(theme);
+
+  // Reapply custom accent color if one is saved
+  const savedColor = localStorage.getItem('customAccentColor');
+  if (savedColor) {
+    applyCustomAccentColor(savedColor);
+  }
 }
 
 // Set theme
@@ -4505,6 +4623,189 @@ function setupEventListeners() {
     safetyCheckingEnabled = e.target.checked;
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
   });
+
+  // Show tooltip when color picker is clicked
+  accentColorPicker.addEventListener('click', () => {
+    accentColorTooltip.style.display = 'block';
+  });
+
+  // Accent color picker
+  accentColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
+    applyAccentColor(color);
+    localStorage.setItem('customAccentColor', color);
+  });
+
+  // Hide tooltip when color picker loses focus or closes
+  accentColorPicker.addEventListener('blur', () => {
+    // Small delay to allow clicking Done button
+    setTimeout(() => {
+      if (document.activeElement !== doneAccentColorBtn) {
+        accentColorTooltip.style.display = 'none';
+      }
+    }, 100);
+  });
+
+  // Reset accent color
+  resetAccentColorBtn.addEventListener('click', () => {
+    const defaultColor = getDefaultAccentColor();
+    accentColorPicker.value = defaultColor;
+    applyAccentColor(defaultColor);
+    localStorage.removeItem('customAccentColor');
+  });
+
+  // Done button - close settings menu and hide tooltip
+  doneAccentColorBtn.addEventListener('click', () => {
+    accentColorTooltip.style.display = 'none';
+    closeAllMenus();
+  });
+
+  // Load saved accent color on startup
+  function loadSavedAccentColor() {
+    const savedColor = localStorage.getItem('customAccentColor');
+    if (savedColor) {
+      accentColorPicker.value = savedColor;
+      applyAccentColor(savedColor);
+    } else {
+      const defaultColor = getDefaultAccentColor();
+      accentColorPicker.value = defaultColor;
+    }
+  }
+
+  // Get default accent color based on current theme
+  function getDefaultAccentColor() {
+    const isDarkMode = document.body.classList.contains('blue-dark') || document.body.classList.contains('dark');
+    if (document.body.classList.contains('dark')) {
+      return '#bb86fc'; // Pure dark theme purple
+    } else if (isDarkMode) {
+      return '#818cf8'; // Blue dark theme
+    } else {
+      return '#6366f1'; // Light theme default
+    }
+  }
+
+  // Apply accent color by calling the global function
+  function applyAccentColor(color) {
+    applyCustomAccentColor(color);
+  }
+
+  // Initialize accent color on page load
+  loadSavedAccentColor();
+
+  // Background image functionality
+  function applyBackgroundImage(imageData, opacity, blur) {
+    if (imageData) {
+      // Create or update background overlay
+      let bgOverlay = document.getElementById('background-overlay');
+      if (!bgOverlay) {
+        bgOverlay = document.createElement('div');
+        bgOverlay.id = 'background-overlay';
+        bgOverlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 0;
+          pointer-events: none;
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+        `;
+        document.body.insertBefore(bgOverlay, document.body.firstChild);
+
+        // Make sure container has higher z-index
+        const container = document.querySelector('.container');
+        if (container && !container.style.position) {
+          container.style.position = 'relative';
+          container.style.zIndex = '1';
+        }
+      }
+      bgOverlay.style.backgroundImage = `url(${imageData})`;
+      bgOverlay.style.opacity = opacity / 100;
+      bgOverlay.style.filter = `blur(${blur}px)`;
+    } else {
+      // Remove background overlay
+      const bgOverlay = document.getElementById('background-overlay');
+      if (bgOverlay) {
+        bgOverlay.remove();
+      }
+    }
+  }
+
+  function loadSavedBackgroundImage() {
+    const savedImage = localStorage.getItem('backgroundImage');
+    const savedOpacity = localStorage.getItem('backgroundOpacity');
+    const savedBlur = localStorage.getItem('backgroundBlur');
+
+    if (savedOpacity) {
+      backgroundOpacitySlider.value = savedOpacity;
+      opacityValue.textContent = `${savedOpacity}%`;
+    }
+    if (savedBlur) {
+      backgroundBlurSlider.value = savedBlur;
+      blurValue.textContent = `${savedBlur}px`;
+    }
+
+    if (savedImage) {
+      applyBackgroundImage(savedImage, savedOpacity || 100, savedBlur || 0);
+    }
+  }
+
+  // Choose background image button
+  chooseBackgroundImageBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    backgroundImagePicker.click();
+  });
+
+  // Handle file selection
+  backgroundImagePicker.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imageData = event.target.result;
+        localStorage.setItem('backgroundImage', imageData);
+        applyBackgroundImage(imageData, backgroundOpacitySlider.value, backgroundBlurSlider.value);
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // Remove background image
+  removeBackgroundImageBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    localStorage.removeItem('backgroundImage');
+    applyBackgroundImage(null);
+    backgroundImagePicker.value = '';
+  });
+
+  // Opacity slider
+  backgroundOpacitySlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    opacityValue.textContent = `${value}%`;
+    localStorage.setItem('backgroundOpacity', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      applyBackgroundImage(savedImage, value, backgroundBlurSlider.value);
+    }
+  });
+
+  // Blur slider
+  backgroundBlurSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    blurValue.textContent = `${value}px`;
+    localStorage.setItem('backgroundBlur', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      applyBackgroundImage(savedImage, backgroundOpacitySlider.value, value);
+    }
+  });
+
+  // Load saved background image on page load
+  loadSavedBackgroundImage();
 
   // Rescan all bookmarks
   rescanAllBtn.addEventListener('click', async () => {
