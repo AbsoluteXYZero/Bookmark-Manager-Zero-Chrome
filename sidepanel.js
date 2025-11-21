@@ -4942,10 +4942,13 @@ function setupEventListeners() {
     dragModeOverlay.style.display = 'flex';
     closeAllMenus();
 
-    // Enable dragging - raise z-index above all content (99) but below banner (100)
+    // Enable dragging - raise z-index above everything (10001)
     bgOverlay.style.cursor = 'move';
     bgOverlay.style.pointerEvents = 'auto';
-    bgOverlay.style.zIndex = '99';
+    bgOverlay.style.zIndex = '10001';
+
+    // Also raise banner to stay on top of overlay
+    dragModeOverlay.style.zIndex = '10002';
 
     const handleMouseDown = (event) => {
       isDragging = true;
@@ -5028,8 +5031,9 @@ function setupEventListeners() {
       bgOverlay.style.pointerEvents = 'none';
       bgOverlay.style.zIndex = '0';
 
-      // Hide the overlay
+      // Hide the banner and restore its z-index
       dragModeOverlay.style.display = 'none';
+      dragModeOverlay.style.zIndex = '100';
 
       bgOverlay.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('mousemove', handleMouseMove);
