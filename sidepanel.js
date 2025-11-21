@@ -2410,6 +2410,7 @@ function repositionMenuIfNeeded(menu, parentElement) {
     // Final safety check - ensure menu is within viewport after positioning
     requestAnimationFrame(() => {
       const finalRect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
 
       // Check if menu extends beyond top of viewport (header area)
       if (finalRect.top < headerBottom) {
@@ -2431,6 +2432,27 @@ function repositionMenuIfNeeded(menu, parentElement) {
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
         menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 8, 100)}px`;
         menu.style.overflowY = 'auto';
+      }
+
+      // Check horizontal overflow - menu extends beyond right edge
+      if (finalRect.right > viewportWidth - 8) {
+        // Menu is too far right, align to right edge of parent
+        menu.style.left = 'auto';
+        menu.style.right = '0';
+      }
+
+      // Check horizontal overflow - menu extends beyond left edge
+      if (finalRect.left < 8) {
+        // Menu is too far left, align to left edge of parent
+        menu.style.left = '0';
+        menu.style.right = 'auto';
+      }
+
+      // Constrain menu width if it's wider than viewport
+      if (finalRect.width > viewportWidth - 16) {
+        menu.style.maxWidth = `${viewportWidth - 16}px`;
+        menu.style.left = '8px';
+        menu.style.right = 'auto';
       }
     });
   });
@@ -2846,9 +2868,12 @@ function closeAllMenus() {
     // Reset positioning styles
     menu.style.top = '';
     menu.style.bottom = '';
+    menu.style.left = '';
+    menu.style.right = '';
     menu.style.marginTop = '';
     menu.style.marginBottom = '';
     menu.style.maxHeight = '';
+    menu.style.maxWidth = '';
     menu.style.overflowY = '';
     menu.style.position = '';
   });
