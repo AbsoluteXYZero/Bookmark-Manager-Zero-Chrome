@@ -2723,7 +2723,57 @@ async function restoreFolderRecursive(folderData, parentId, index) {
   }
 }
 
-// Adjust dropdown position to prevent overflow
+// Position fixed dropdown menu relative to button
+function positionFixedDropdown(dropdown, button) {
+  if (!dropdown || !button) return;
+
+  requestAnimationFrame(() => {
+    const buttonRect = button.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Reset positioning
+    dropdown.style.left = '';
+    dropdown.style.right = '';
+    dropdown.style.top = '';
+    dropdown.style.bottom = '';
+    dropdown.style.maxWidth = `${viewportWidth - 16}px`;
+
+    // Position below button, aligned to right edge of button
+    let top = buttonRect.bottom + 4;
+    let right = viewportWidth - buttonRect.right;
+
+    // Check if menu would go off bottom of screen
+    dropdown.style.visibility = 'hidden';
+    dropdown.style.display = 'block';
+    const menuHeight = dropdown.offsetHeight;
+    dropdown.style.visibility = '';
+    dropdown.style.display = '';
+
+    if (top + menuHeight > viewportHeight - 8) {
+      // Show above button instead
+      top = buttonRect.top - menuHeight - 4;
+      if (top < 8) {
+        // Not enough space above either, position at top with scrolling
+        top = 8;
+        dropdown.style.maxHeight = `${viewportHeight - 16}px`;
+      }
+    }
+
+    // Apply positioning
+    dropdown.style.top = `${top}px`;
+    dropdown.style.right = `${right}px`;
+
+    // Check if menu extends beyond left edge
+    const menuLeft = viewportWidth - right - dropdown.offsetWidth;
+    if (menuLeft < 8) {
+      dropdown.style.left = '8px';
+      dropdown.style.right = '8px';
+    }
+  });
+}
+
+// Adjust dropdown position to prevent overflow (for absolute positioned menus)
 function adjustDropdownPosition(dropdown) {
   if (!dropdown) return;
 
@@ -2735,6 +2785,7 @@ function adjustDropdownPosition(dropdown) {
   dropdown.style.bottom = '';
   dropdown.style.marginTop = '';
   dropdown.style.marginBottom = '';
+  dropdown.style.maxWidth = '';
 
   // Wait for next frame to ensure menu is visible and has dimensions
   requestAnimationFrame(() => {
@@ -2742,20 +2793,25 @@ function adjustDropdownPosition(dropdown) {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
+    // Constrain menu width to viewport
+    if (rect.width > viewportWidth - 16) {
+      dropdown.style.maxWidth = `${viewportWidth - 16}px`;
+    }
+
     // Check horizontal overflow
     if (rect.right > viewportWidth) {
-      // Menu extends beyond right edge
-      const overflow = rect.right - viewportWidth;
-      dropdown.style.right = '0';
-      dropdown.style.transform = `translateX(-${overflow + 8}px)`;
+      // Menu extends beyond right edge - align to right with padding
+      dropdown.style.right = '8px';
+      dropdown.style.left = 'auto';
+      dropdown.style.transform = '';
     } else if (rect.left < 0) {
-      // Menu extends beyond left edge
-      dropdown.style.left = '0';
+      // Menu extends beyond left edge - align to left with padding
+      dropdown.style.left = '8px';
       dropdown.style.right = 'auto';
     }
 
     // Check vertical overflow
-    if (rect.bottom > viewportHeight) {
+    if (rect.bottom > viewportHeight - 8) {
       // Menu extends beyond bottom edge - show above button instead
       dropdown.style.top = 'auto';
       dropdown.style.bottom = '100%';
@@ -4791,7 +4847,7 @@ function setupEventListeners() {
     e.stopPropagation();
     settingsMenu.classList.toggle('show');
     if (settingsMenu.classList.contains('show')) {
-      adjustDropdownPosition(settingsMenu);
+      positionFixedDropdown(settingsMenu, settingsBtn);
       // Update cache size display when menu opens
       await updateCacheSizeDisplay();
       // Update whitelist count when menu opens
