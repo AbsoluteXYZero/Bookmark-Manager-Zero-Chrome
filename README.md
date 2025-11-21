@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -106,6 +106,8 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - 👆 **Clickable Status Icons** - Click shield or chain icons for full status details popup
 - 🔄 **HTTP Redirect Detection** - Detects when HTTP bookmarks redirect to HTTPS
 - ✅ **Whitelist Support** - Mark trusted URLs to skip safety checks
+- 📋 **Whitelist Management** - View and remove whitelisted domains from settings menu
+- ⚪ **Whitelist Indicator** - Whitelisted bookmarks show white shield instead of green
 - 📜 **Safety History** - Track status changes over time
 
 ### Privacy & Security
@@ -116,9 +118,12 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### User Experience
 - 🎨 **3 Themes** - Blue Dark (default), Light, Dark
+- 🎨 **Custom Accent Colors** - Pick any color for theme customization
+- 🖼️ **Custom Backgrounds** - Upload and position your own background images
 - ⌨️ **Keyboard Navigation** - Full keyboard support with arrow keys
 - ♿ **Accessibility** - Comprehensive ARIA labels and keyboard traps
-- 🔍 **Zoom Control** - 50% - 200% zoom levels
+- 🔍 **Zoom Control** - 50% - 200% zoom levels for bookmark content
+- 📏 **GUI Scaling** - 80% - 140% scaling for interface elements
 - 📱 **Responsive Design** - Adapts to side panel width
 
 ### Advanced Features
@@ -177,8 +182,11 @@ Coming soon - awaiting Chrome review
 Click the gear icon to access:
 - **Display Options:** Toggle title, URL, status indicators, previews
 - **View Mode:** Switch between list and grid layouts
-- **Theme:** Choose from 3 themes
-- **Zoom:** Adjust interface size
+- **Theme:** Choose from 3 themes or customize with custom accent colors
+- **Custom Background:** Upload and position your own background image
+- **Zoom:** Adjust bookmark content size (50% - 200%)
+- **GUI Scale:** Adjust interface element size (80% - 140%)
+- **Whitelist Management:** View and manage whitelisted domains
 - **Cache Management:** Configure auto-clear settings
 - **API Keys:** Set up optional security API keys
 
@@ -339,6 +347,11 @@ If all above checks pass, the URL is analyzed for suspicious patterns:
 Users can whitelist specific URLs to:
 - Skip safety checks for trusted sites
 - Override false positives
+- Whitelisted bookmarks display a white shield indicator instead of green
+- Manage whitelisted domains through the Settings menu:
+  - View all whitelisted domains with count badge
+  - Remove domains with one click
+  - Automatic recheck of affected bookmarks when removed
 - Whitelist is stored locally and persists across sessions
 
 ## Permissions
@@ -417,7 +430,37 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.5.0 (Current) - Grid View & Link Detection Improvements
+### v1.6.0 (Current) - Customization & UI Improvements
+
+**New Features:**
+- 🎨 **Custom Accent Colors** - Pick any color for the Material Design accent theme
+- 🖼️ **Custom Background Images** - Upload your own background image with drag-to-reposition and pinch-to-zoom scaling controls
+- 📋 **Whitelist Management UI** - View and manage whitelisted domains directly from settings menu
+  - Shows count badge of whitelisted domains
+  - Expandable panel with remove buttons for each domain
+  - Automatic bookmark recheck when domains are removed
+- 📏 **GUI Scaling** - Independent size control for header, toolbar, menus, and status bar (80% - 140% in 10% increments)
+- 🎯 **Improved Menu Positioning** - Context menus and dropdown menus now properly constrain to viewport boundaries
+  - Menus avoid being cut off by toolbar/header
+  - Horizontal overflow prevention
+  - Automatic scrolling when menus don't fit
+  - Fixed positioning for toolbar dropdowns
+- 🎨 **Theme-Aware Scrollbars** - Scrollbars now match your selected color theme
+  - Custom styling for Firefox and Webkit browsers
+  - Hover and active states
+- ⚪ **White Shield Indicator** - Whitelisted bookmarks display white shield instead of green to distinguish user-trusted vs security-scanned sites
+- 🔒 **Menu Mutual Exclusion** - Only one menu can be open at a time for cleaner UX
+- 👆 **Click-Outside Menu Closing** - Menus automatically close when clicking elsewhere
+
+**Bug Fixes:**
+- 🐛 Fixed double favicon appearing in grid view
+- 🐛 Fixed menus extending outside sidebar boundaries
+- 🐛 Fixed menus appearing behind toolbar/header elements
+- 🐛 Fixed white scrollbars not matching theme
+
+---
+
+### v1.5.0 - Grid View & Link Detection Improvements
 
 **New Features:**
 - 📐 **Square Card Layout** - Bookmarks display as square cards in grid view with aspect-ratio
