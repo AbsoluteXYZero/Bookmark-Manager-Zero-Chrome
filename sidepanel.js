@@ -5019,7 +5019,7 @@ function setupEventListeners() {
       // Adjust scale based on scroll direction
       // Scroll down (deltaY > 0) = zoom out, Scroll up (deltaY < 0) = zoom in
       const scaleChange = event.deltaY > 0 ? -5 : 5;
-      currentScale = Math.max(50, Math.min(200, currentScale + scaleChange));
+      currentScale = Math.max(10, Math.min(1000, currentScale + scaleChange));
 
       // Update slider and display
       backgroundScaleSlider.value = currentScale;
