@@ -4942,10 +4942,10 @@ function setupEventListeners() {
     dragModeOverlay.style.display = 'flex';
     closeAllMenus();
 
-    // Enable dragging - raise z-index above container to capture all mouse events
+    // Enable dragging - raise z-index above all content (99) but below banner (100)
     bgOverlay.style.cursor = 'move';
     bgOverlay.style.pointerEvents = 'auto';
-    bgOverlay.style.zIndex = '10';
+    bgOverlay.style.zIndex = '99';
 
     const handleMouseDown = (event) => {
       isDragging = true;
