@@ -2335,47 +2335,19 @@
     </div>
   </div>
 
-  <!-- Drag Mode Overlay -->
-  <div id="dragModeOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); z-index: 9999; backdrop-filter: blur(4px); align-items: center; justify-content: center;">
-    <div style="background: var(--md-sys-color-surface); border-radius: 12px; padding: 24px; max-width: 360px; margin: 20px; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1); position: relative;">
-      <button id="closeDragModeOverlay" style="position: absolute; top: 12px; right: 12px; background: none; border: none; font-size: 24px; cursor: pointer; color: var(--md-sys-color-on-surface-variant); padding: 4px; line-height: 1; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background 0.2s;" onmouseover="this.style.background='var(--md-sys-color-surface-variant)'" onmouseout="this.style.background='none'">×</button>
-      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-        <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--md-sys-color-primary-container); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-          <svg width="24" height="24" fill="var(--md-sys-color-primary)" viewBox="0 0 24 24">
-            <path d="M13,6V11H18V7.75L22.25,12L18,16.25V13H13V18H16.25L12,22.25L7.75,18H11V13H6V16.25L1.75,12L6,7.75V11H11V6H7.75L12,1.75L16.25,6H13Z"/>
-          </svg>
-        </div>
-        <div>
-          <h3 style="font-size: 18px; font-weight: 600; color: var(--md-sys-color-on-surface); margin-bottom: 4px;">Drag-to-Edit Mode</h3>
-          <p style="font-size: 12px; color: var(--md-sys-color-on-surface-variant);">Reposition & scale your background</p>
+  <!-- Drag Mode Info Banner -->
+  <div id="dragModeOverlay" style="display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 100; pointer-events: none;">
+    <div style="background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); padding: 12px 16px; box-shadow: 0 -4px 6px -1px rgb(0 0 0 / 0.1); display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: auto;">
+      <div style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0;">
+          <path d="M13,6V11H18V7.75L22.25,12L18,16.25V13H13V18H16.25L12,22.25L7.75,18H11V13H6V16.25L1.75,12L6,7.75V11H11V6H7.75L12,1.75L16.25,6H13Z"/>
+        </svg>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 2px;">Drag-to-Edit Mode Active</div>
+          <div style="font-size: 11px; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Drag to reposition • Scroll to scale</div>
         </div>
       </div>
-      <div style="background: var(--md-sys-color-surface-variant); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-        <div style="display: flex; align-items: start; gap: 12px; margin-bottom: 12px;">
-          <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--md-sys-color-surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-            <svg width="18" height="18" fill="var(--md-sys-color-primary)" viewBox="0 0 24 24">
-              <path d="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"/>
-            </svg>
-          </div>
-          <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 13px; color: var(--md-sys-color-on-surface); margin-bottom: 4px;">Drag to Reposition</div>
-            <div style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.5;">Click and drag anywhere on the background to move your image</div>
-          </div>
-        </div>
-        <div style="display: flex; align-items: start; gap: 12px;">
-          <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--md-sys-color-surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px;">
-            <svg width="18" height="18" fill="var(--md-sys-color-primary)" viewBox="0 0 24 24">
-              <path d="M7,13A2,2 0 0,1 9,15A2,2 0 0,1 7,17A2,2 0 0,1 5,15A2,2 0 0,1 7,13M15.1,13C15.5,13.1 15.9,13.3 16.2,13.6L17.6,12.2C17.1,11.7 16.5,11.4 15.8,11.1L15.1,13M2.81,2.81L1.39,4.22L8.1,11L7.2,11.1C6.8,11.1 6.4,11.2 6.1,11.4L7.5,12.8C7.8,12.6 8.1,12.5 8.5,12.5C9.9,12.5 11,13.6 11,15C11,16.4 9.9,17.5 8.5,17.5C7.1,17.5 6,16.4 6,15C6,14.6 6.1,14.3 6.2,14L4.8,12.6C4.3,13.1 4,13.8 4,14.5C4,16.7 5.8,18.5 8,18.5C10.2,18.5 12,16.7 12,14.5C12,13.4 11.5,12.4 10.7,11.7L19.78,20.78L21.19,19.36L2.81,2.81M17,9A2,2 0 0,1 15,7A2,2 0 0,1 17,5A2,2 0 0,1 19,7A2,2 0 0,1 17,9Z"/>
-            </svg>
-          </div>
-          <div style="flex: 1;">
-            <div style="font-weight: 600; font-size: 13px; color: var(--md-sys-color-on-surface); margin-bottom: 4px;">Scroll to Scale</div>
-            <div style="font-size: 12px; color: var(--md-sys-color-on-surface-variant); line-height: 1.5;">Use your mouse wheel to zoom in or zoom out</div>
-          </div>
-        </div>
-      </div>
-      <div style="text-align: center; font-size: 12px; color: var(--md-sys-color-on-surface-variant); margin-bottom: 16px;">Close this window to exit drag mode and save your changes</div>
-      <button id="closeDragModeBtn" style="width: 100%; padding: 12px; background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#5558e3'" onmouseout="this.style.background='var(--md-sys-color-primary)'">Close & Exit Drag Mode</button>
+      <button id="closeDragModeBtn" style="padding: 6px 16px; background: rgba(255, 255, 255, 0.2); color: var(--md-sys-color-on-primary); border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: background 0.2s;" onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">Exit & Save</button>
     </div>
   </div>
 

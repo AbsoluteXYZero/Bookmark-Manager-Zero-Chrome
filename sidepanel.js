@@ -469,7 +469,6 @@ const backgroundScaleSlider = document.getElementById('backgroundScale');
 const scaleValue = document.getElementById('scaleValue');
 const dragModeOverlay = document.getElementById('dragModeOverlay');
 const closeDragModeBtn = document.getElementById('closeDragModeBtn');
-const closeDragModeOverlay = document.getElementById('closeDragModeOverlay');
 
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
@@ -5035,7 +5034,6 @@ function setupEventListeners() {
       document.removeEventListener('mouseup', handleMouseUp);
       document.removeEventListener('wheel', handleWheel);
       closeDragModeBtn.removeEventListener('click', stopDragging);
-      closeDragModeOverlay.removeEventListener('click', stopDragging);
 
       // Save final position
       localStorage.setItem('backgroundPositionX', currentPosX);
@@ -5047,9 +5045,8 @@ function setupEventListeners() {
     document.addEventListener('mouseup', handleMouseUp);
     document.addEventListener('wheel', handleWheel, { passive: false });
 
-    // Set up overlay close handlers
+    // Set up banner close handler
     closeDragModeBtn.addEventListener('click', stopDragging);
-    closeDragModeOverlay.addEventListener('click', stopDragging);
   });
 
   // Load saved background image on page load
