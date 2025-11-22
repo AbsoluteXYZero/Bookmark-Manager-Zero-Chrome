@@ -106,8 +106,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - 👆 **Clickable Status Icons** - Click shield or chain icons for full status details popup
 - 🔄 **HTTP Redirect Detection** - Detects when HTTP bookmarks redirect to HTTPS
 - ✅ **Whitelist Support** - Mark trusted URLs to skip safety checks
-- 📋 **Whitelist Management** - View and remove whitelisted domains from settings menu
-- ⚪ **Whitelist Indicator** - Whitelisted bookmarks show white shield instead of green
+- ⚪ **Trusted Filter** - Filter to view only whitelisted bookmarks (white shield)
 - 📜 **Safety History** - Track status changes over time
 
 ### Privacy & Security
@@ -186,7 +185,6 @@ Click the gear icon to access:
 - **Custom Background:** Upload and position your own background image
 - **Zoom:** Adjust bookmark content size (50% - 200%)
 - **GUI Scale:** Adjust interface element size (80% - 140%)
-- **Whitelist Management:** View and manage whitelisted domains
 - **Cache Management:** Configure auto-clear settings
 - **API Keys:** Set up optional security API keys
 
@@ -348,10 +346,8 @@ Users can whitelist specific URLs to:
 - Skip safety checks for trusted sites
 - Override false positives
 - Whitelisted bookmarks display a white shield indicator instead of green
-- Manage whitelisted domains through the Settings menu:
-  - View all whitelisted domains with count badge
-  - Remove domains with one click
-  - Automatic recheck of affected bookmarks when removed
+- Add/remove from whitelist via bookmark context menu (right-click)
+- Use the "Trusted" filter to view all whitelisted bookmarks
 - Whitelist is stored locally and persists across sessions
 
 ## Permissions
@@ -430,33 +426,21 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.6.0 (Current) - Customization & UI Improvements
+### v1.6.0 (Current) - UI Refinements & Trusted Filter
 
 **New Features:**
-- 🎨 **Custom Accent Colors** - Pick any color for the Material Design accent theme
-- 🖼️ **Custom Background Images** - Upload your own background image with drag-to-reposition and pinch-to-zoom scaling controls
-- 📋 **Whitelist Management UI** - View and manage whitelisted domains directly from settings menu
-  - Shows count badge of whitelisted domains
-  - Expandable panel with remove buttons for each domain
-  - Automatic bookmark recheck when domains are removed
-- 📏 **GUI Scaling** - Independent size control for header, toolbar, menus, and status bar (80% - 140% in 10% increments)
-- 🎯 **Improved Menu Positioning** - Context menus and dropdown menus now properly constrain to viewport boundaries
-  - Menus avoid being cut off by toolbar/header
-  - Horizontal overflow prevention
-  - Automatic scrolling when menus don't fit
-  - Fixed positioning for toolbar dropdowns
-- 🎨 **Theme-Aware Scrollbars** - Scrollbars now match your selected color theme
-  - Custom styling for Firefox and Webkit browsers
-  - Hover and active states
-- ⚪ **White Shield Indicator** - Whitelisted bookmarks display white shield instead of green to distinguish user-trusted vs security-scanned sites
-- 🔒 **Menu Mutual Exclusion** - Only one menu can be open at a time for cleaner UX
-- 👆 **Click-Outside Menu Closing** - Menus automatically close when clicking elsewhere
+- ⚪ **Trusted Filter** - New filter chip to view only whitelisted bookmarks (white shield icon)
+- 🎨 **Accent Color in Theme Menu** - Moved accent color picker from settings to theme menu for better organization
+- 📏 **Compact Filter Chips** - Reduced size of safety filter chips so all 4 fit on one line
+
+**Improvements:**
+- 🔄 **Streamlined Whitelist Management** - Removed whitelist panel from settings menu; use Trusted filter instead
+- 🎯 **Simplified Accent Color Picker** - Removed Done button as changes apply instantly
+- 📐 **Compact Background Settings** - Reduced size of background image controls to save screen space
 
 **Bug Fixes:**
-- 🐛 Fixed double favicon appearing in grid view
-- 🐛 Fixed menus extending outside sidebar boundaries
-- 🐛 Fixed menus appearing behind toolbar/header elements
-- 🐛 Fixed white scrollbars not matching theme
+- 🐛 Fixed accent color picker triggering theme switch when clicked
+- 🐛 Fixed Safe filter excluding whitelisted bookmarks (now separate Trusted filter)
 
 ---
 
