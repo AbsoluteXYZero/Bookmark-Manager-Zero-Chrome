@@ -1755,6 +1755,66 @@
         transform: translateX(-50%) translateY(0);
       }
     }
+
+    /* Toggle Switch Styles */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 36px;
+      height: 20px;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: var(--md-sys-color-surface-container);
+      transition: 0.3s;
+      border-radius: 20px;
+      border: 1px solid var(--md-sys-color-outline);
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--md-sys-color-on-surface-variant);
+      transition: 0.3s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch input:checked + .toggle-slider {
+      background-color: var(--md-sys-color-primary);
+      border-color: var(--md-sys-color-primary);
+    }
+
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(16px);
+      background-color: var(--md-sys-color-on-primary);
+    }
+
+    /* Dark Text Mode Styles */
+    body.blue-dark.dark-text-mode .bookmark-item,
+    body.dark.dark-text-mode .bookmark-item {
+      color: #1a1a1a !important;
+    }
+
+    body.blue-dark.dark-text-mode .folder-name,
+    body.dark.dark-text-mode .folder-name {
+      color: #1a1a1a !important;
+    }
   </style>
 </head>
 <body class="blue-dark">
@@ -2014,14 +2074,59 @@
             </button>
             <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
             <div style="display: flex; flex-direction: column;">
-              <label style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,15.31L23.31,12L20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Bookmark Opacity</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="range" id="containerOpacity" min="0" max="100" value="100" style="width: 80px;">
+                  <span id="containerOpacityValue" style="min-width: 35px; font-size: 11px;">100%</span>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18V6Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Invert Text Color</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="darkTextToggle">
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9.62,12L12,5.67L14.37,12M11,3L5.5,17H7.75L8.87,14H15.12L16.25,17H18.5L13,3H11Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Text Color</span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="color" id="textColorPicker" value="#ffffff" style="cursor: pointer; width: 32px; height: 24px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 0;">
+                  <button id="resetTextColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 10px; white-space: nowrap;">Reset</button>
+                </div>
+              </div>
+              <label style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 12px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span class="icon">
                     <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M17.5,12A1.5,1.5 0 0,1 16,10.5A1.5,1.5 0 0,1 17.5,9A1.5,1.5 0 0,1 19,10.5A1.5,1.5 0 0,1 17.5,12M14.5,8A1.5,1.5 0 0,1 13,6.5A1.5,1.5 0 0,1 14.5,5A1.5,1.5 0 0,1 16,6.5A1.5,1.5 0 0,1 14.5,8M9.5,8A1.5,1.5 0 0,1 8,6.5A1.5,1.5 0 0,1 9.5,5A1.5,1.5 0 0,1 11,6.5A1.5,1.5 0 0,1 9.5,8M6.5,12A1.5,1.5 0 0,1 5,10.5A1.5,1.5 0 0,1 6.5,9A1.5,1.5 0 0,1 8,10.5A1.5,1.5 0 0,1 6.5,12M12,3A9,9 0 0,0 3,12A9,9 0 0,0 12,21A1.5,1.5 0 0,0 13.5,19.5C13.5,19.11 13.35,18.76 13.11,18.5C12.88,18.23 12.73,17.88 12.73,17.5A1.5,1.5 0 0,1 14.23,16H16A5,5 0 0,0 21,11C21,6.58 16.97,3 12,3Z"/>
                     </svg>
                   </span>
-                  <span>Accent Color</span>
+                  <span style="font-size: 11px;">Accent Color</span>
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
                   <input type="color" id="accentColorPicker" value="#6366f1" style="cursor: pointer; width: 32px; height: 24px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 0;">

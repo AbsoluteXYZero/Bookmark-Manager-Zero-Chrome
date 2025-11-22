@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-1.7.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -118,12 +118,15 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 ### User Experience
 - 🎨 **3 Themes** - Blue Dark (default), Light, Dark
 - 🎨 **Custom Accent Colors** - Pick any color for theme customization
+- 🎨 **Bookmark Opacity Control** - Adjust transparency of bookmark items (0-100%)
+- 🌓 **Text Color Inversion** - Toggle dark text mode for better contrast
+- 🎨 **Custom Text Colors** - Full color picker for bookmark text customization
 - 🖼️ **Custom Backgrounds** - Upload and position your own background images
 - ⌨️ **Keyboard Navigation** - Full keyboard support with arrow keys
 - ♿ **Accessibility** - Comprehensive ARIA labels and keyboard traps
 - 🔍 **Zoom Control** - 50% - 200% zoom levels for bookmark content
 - 📏 **GUI Scaling** - 80% - 140% scaling for interface elements
-- 📱 **Responsive Design** - Adapts to side panel width
+- 📱 **Responsive Design** - Adapts to side panel width with smart menu positioning
 
 ### Advanced Features
 - 🖼️ **Website Previews** - Screenshot thumbnails of bookmarks
@@ -430,7 +433,27 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.6.0 (Current) - UI Refinements & Custom Navigation
+### v1.7.0 (Current) - Enhanced Theming & Menu Improvements
+
+**New Features:**
+- 🎨 **Bookmark Opacity Slider** - Control bookmark transparency (0-100%) directly from Theme menu
+- 🌓 **Invert Text Color Toggle** - Dark text mode for bookmarks and folders in Theme menu
+- 🎨 **Custom Text Color Picker** - Full color customization for bookmark text with reset button
+
+**Improvements:**
+- 📐 **Improved Menu Positioning** - All menus (Theme, View, Zoom, Settings) now respect 16px margins from viewport edges
+- 🎯 **Enhanced Context Menu** - Bookmark context menus never extend behind toolbar, with better overflow handling
+- 📱 **Better Responsive Menus** - Menus scale properly to viewport width with increased margins for cleaner layout
+- 🎨 **Reorganized Theme Menu** - Opacity, text inversion, and text color controls now in Theme menu for better organization
+
+**Bug Fixes:**
+- 🐛 Fixed context menus sometimes positioning behind header/toolbar
+- 🐛 Fixed menu overflow on narrow viewports
+- 🐛 Improved menu positioning calculations for edge cases
+
+---
+
+### v1.6.0 - UI Refinements & Custom Navigation
 
 **New Features:**
 - 📁 **Default Start Folder** - Choose which folder to auto-expand when opening the sidebar

@@ -456,6 +456,11 @@ const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
 const accentColorPicker = document.getElementById('accentColorPicker');
 const resetAccentColorBtn = document.getElementById('resetAccentColor');
+const containerOpacity = document.getElementById('containerOpacity');
+const containerOpacityValue = document.getElementById('containerOpacityValue');
+const darkTextToggle = document.getElementById('darkTextToggle');
+const textColorPicker = document.getElementById('textColorPicker');
+const resetTextColor = document.getElementById('resetTextColor');
 const backgroundImagePicker = document.getElementById('backgroundImagePicker');
 const chooseBackgroundImageBtn = document.getElementById('chooseBackgroundImage');
 const removeBackgroundImageBtn = document.getElementById('removeBackgroundImage');
@@ -2493,11 +2498,11 @@ function repositionMenuIfNeeded(menu, parentElement) {
       if (finalRect.top < headerBottom) {
         const overflow = headerBottom - finalRect.top;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 8, 100)}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 16, 100)}px`;
         menu.style.overflowY = 'auto';
         // Also adjust top position to be below header
         if (positionAbove) {
-          menu.style.top = `${headerBottom + 8}px`;
+          menu.style.top = `${headerBottom + 16}px`;
           menu.style.bottom = 'auto';
           menu.style.position = 'fixed';
         }
@@ -2507,28 +2512,28 @@ function repositionMenuIfNeeded(menu, parentElement) {
       if (finalRect.bottom > viewportHeight) {
         const overflow = finalRect.bottom - viewportHeight;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 8, 100)}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 16, 100)}px`;
         menu.style.overflowY = 'auto';
       }
 
       // Check horizontal overflow - menu extends beyond right edge
-      if (finalRect.right > viewportWidth - 8) {
+      if (finalRect.right > viewportWidth - 16) {
         // Menu is too far right, align to right edge of parent
         menu.style.left = 'auto';
         menu.style.right = '0';
       }
 
       // Check horizontal overflow - menu extends beyond left edge
-      if (finalRect.left < 8) {
+      if (finalRect.left < 16) {
         // Menu is too far left, align to left edge of parent
         menu.style.left = '0';
         menu.style.right = 'auto';
       }
 
       // Constrain menu width if it's wider than viewport
-      if (finalRect.width > viewportWidth - 16) {
-        menu.style.maxWidth = `${viewportWidth - 16}px`;
-        menu.style.left = '8px';
+      if (finalRect.width > viewportWidth - 32) {
+        menu.style.maxWidth = `${viewportWidth - 32}px`;
+        menu.style.left = '16px';
         menu.style.right = 'auto';
       }
     });
@@ -2853,7 +2858,7 @@ function positionFixedDropdown(dropdown, button) {
     dropdown.style.right = '';
     dropdown.style.top = '';
     dropdown.style.bottom = '';
-    dropdown.style.maxWidth = `${viewportWidth - 16}px`;
+    dropdown.style.maxWidth = `${viewportWidth - 32}px`;
 
     // Position below button, aligned to right edge of button
     let top = buttonRect.bottom + 4;
@@ -2866,13 +2871,13 @@ function positionFixedDropdown(dropdown, button) {
     dropdown.style.visibility = '';
     dropdown.style.display = '';
 
-    if (top + menuHeight > viewportHeight - 8) {
+    if (top + menuHeight > viewportHeight - 16) {
       // Show above button instead
       top = buttonRect.top - menuHeight - 4;
-      if (top < 8) {
+      if (top < 16) {
         // Not enough space above either, position at top with scrolling
-        top = 8;
-        dropdown.style.maxHeight = `${viewportHeight - 16}px`;
+        top = 16;
+        dropdown.style.maxHeight = `${viewportHeight - 32}px`;
       }
     }
 
@@ -2882,9 +2887,9 @@ function positionFixedDropdown(dropdown, button) {
 
     // Check if menu extends beyond left edge
     const menuLeft = viewportWidth - right - dropdown.offsetWidth;
-    if (menuLeft < 8) {
-      dropdown.style.left = '8px';
-      dropdown.style.right = '8px';
+    if (menuLeft < 16) {
+      dropdown.style.left = '16px';
+      dropdown.style.right = '16px';
     }
   });
 }
@@ -2910,24 +2915,24 @@ function adjustDropdownPosition(dropdown) {
     const viewportHeight = window.innerHeight;
 
     // Constrain menu width to viewport
-    if (rect.width > viewportWidth - 16) {
-      dropdown.style.maxWidth = `${viewportWidth - 16}px`;
+    if (rect.width > viewportWidth - 32) {
+      dropdown.style.maxWidth = `${viewportWidth - 32}px`;
     }
 
     // Check horizontal overflow
     if (rect.right > viewportWidth) {
       // Menu extends beyond right edge - align to right with padding
-      dropdown.style.right = '8px';
+      dropdown.style.right = '16px';
       dropdown.style.left = 'auto';
       dropdown.style.transform = '';
     } else if (rect.left < 0) {
       // Menu extends beyond left edge - align to left with padding
-      dropdown.style.left = '8px';
+      dropdown.style.left = '16px';
       dropdown.style.right = 'auto';
     }
 
     // Check vertical overflow
-    if (rect.bottom > viewportHeight - 8) {
+    if (rect.bottom > viewportHeight - 16) {
       // Menu extends beyond bottom edge - show above button instead
       dropdown.style.top = 'auto';
       dropdown.style.bottom = '100%';
@@ -4952,8 +4957,84 @@ function setupEventListeners() {
     applyCustomAccentColor(color);
   }
 
+  // Container Opacity Slider
+  containerOpacity.addEventListener('input', (e) => {
+    const value = e.target.value;
+    containerOpacityValue.textContent = value + '%';
+    const opacity = value / 100;
+    document.querySelectorAll('.bookmark-item').forEach(item => {
+      item.style.opacity = opacity;
+    });
+    localStorage.setItem('containerOpacity', value);
+  });
+
+  // Load saved container opacity
+  const savedOpacity = localStorage.getItem('containerOpacity');
+  if (savedOpacity) {
+    containerOpacity.value = savedOpacity;
+    containerOpacityValue.textContent = savedOpacity + '%';
+    const opacity = savedOpacity / 100;
+    document.querySelectorAll('.bookmark-item').forEach(item => {
+      item.style.opacity = opacity;
+    });
+  }
+
+  // Dark Text Toggle
+  darkTextToggle.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      document.body.classList.add('dark-text-mode');
+      localStorage.setItem('darkTextMode', 'true');
+    } else {
+      document.body.classList.remove('dark-text-mode');
+      localStorage.removeItem('darkTextMode');
+    }
+  });
+
+  // Load saved dark text mode
+  const savedDarkTextMode = localStorage.getItem('darkTextMode');
+  if (savedDarkTextMode === 'true') {
+    darkTextToggle.checked = true;
+    document.body.classList.add('dark-text-mode');
+  }
+
+  // Text Color Picker
+  textColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
+    applyCustomTextColor(color);
+    localStorage.setItem('customTextColor', color);
+  });
+
+  // Reset Text Color
+  resetTextColor.addEventListener('click', () => {
+    const defaultColor = '#ffffff';
+    textColorPicker.value = defaultColor;
+    applyCustomTextColor(defaultColor);
+    localStorage.removeItem('customTextColor');
+  });
+
+  // Apply custom text color
+  function applyCustomTextColor(color) {
+    document.querySelectorAll('.bookmark-item, .folder-name').forEach(item => {
+      item.style.color = color;
+    });
+  }
+
+  // Load saved text color on startup
+  function loadCustomTextColor() {
+    const savedColor = localStorage.getItem('customTextColor');
+    if (savedColor) {
+      textColorPicker.value = savedColor;
+      applyCustomTextColor(savedColor);
+    } else {
+      textColorPicker.value = '#ffffff';
+    }
+  }
+
   // Initialize accent color on page load
   loadSavedAccentColor();
+
+  // Initialize custom text color on page load
+  loadCustomTextColor();
 
   // Background image functionality
   function applyBackgroundImage(imageData, opacity, blur, size, positionX, positionY, scale) {
