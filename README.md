@@ -181,12 +181,16 @@ Coming soon - awaiting Chrome review
 Click the gear icon to access:
 - **Display Options:** Toggle title, URL, status indicators, previews
 - **View Mode:** Switch between list and grid layouts
-- **Theme:** Choose from 3 themes or customize with custom accent colors
+- **Default Start Folder:** Choose which folder to expand on sidebar load
+- **Cache Management:** Configure auto-clear settings
+- **API Keys:** Set up optional security API keys
+
+Click the theme icon to access:
+- **Theme:** Choose from 3 themes (Blue Dark, Light, Dark)
+- **Accent Color:** Customize theme accent color
 - **Custom Background:** Upload and position your own background image
 - **Zoom:** Adjust bookmark content size (50% - 200%)
 - **GUI Scale:** Adjust interface element size (80% - 140%)
-- **Cache Management:** Configure auto-clear settings
-- **API Keys:** Set up optional security API keys
 
 ### Keyboard Shortcuts
 
@@ -426,10 +430,11 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.6.0 (Current) - UI Refinements & Trusted Filter
+### v1.6.0 (Current) - UI Refinements & Custom Navigation
 
 **New Features:**
-- ⚪ **Trusted Filter** - New filter chip to view only whitelisted bookmarks (white shield icon)
+- 📁 **Default Start Folder** - Choose which folder to auto-expand when opening the sidebar
+- ⚪ **Trusted Filter** - New filter chip to view only whitelisted bookmarks (white shield icon at far right)
 - 🎨 **Accent Color in Theme Menu** - Moved accent color picker from settings to theme menu for better organization
 - 📏 **Compact Filter Chips** - Reduced size of safety filter chips so all 4 fit on one line
 
@@ -437,6 +442,7 @@ Contributions welcome! Please:
 - 🔄 **Streamlined Whitelist Management** - Removed whitelist panel from settings menu; use Trusted filter instead
 - 🎯 **Simplified Accent Color Picker** - Removed Done button as changes apply instantly
 - 📐 **Compact Background Settings** - Reduced size of background image controls to save screen space
+- 🎯 **Reorganized Settings** - Theme-related settings (theme, accent color, background, zoom, GUI scale) moved to theme menu
 
 **Bug Fixes:**
 - 🐛 Fixed accent color picker triggering theme switch when clicked
