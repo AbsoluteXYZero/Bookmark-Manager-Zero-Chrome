@@ -929,32 +929,31 @@ function populateDefaultFolderSelect() {
   }
 }
 
-// Expand to default folder on load
+// Navigate to default folder on load
 async function expandToDefaultFolder() {
   const defaultFolderId = localStorage.getItem('defaultStartFolder');
   if (!defaultFolderId) return;
 
-  // Find the path to this folder (all parent folders)
-  const pathToFolder = [];
-  function findPath(nodes, targetId, path = []) {
+  // Find the folder in the bookmark tree
+  function findFolder(nodes, targetId) {
     for (const node of nodes) {
       if (node.id === targetId) {
-        return [...path, node.id];
+        return node;
       }
       if (node.children) {
-        const found = findPath(node.children, targetId, [...path, node.id]);
+        const found = findFolder(node.children, targetId);
         if (found) return found;
       }
     }
     return null;
   }
 
-  const path = findPath(bookmarkTree, defaultFolderId);
-  if (path) {
-    // Expand all folders in the path
-    path.forEach(folderId => {
-      expandedFolders.add(folderId);
-    });
+  const targetFolder = findFolder(bookmarkTree, defaultFolderId);
+  if (targetFolder && targetFolder.children) {
+    // Replace bookmarkTree with just this folder's children
+    bookmarkTree = targetFolder.children;
+    // Expand this folder
+    expandedFolders.add(defaultFolderId);
   }
 }
 
