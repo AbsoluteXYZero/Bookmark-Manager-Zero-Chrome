@@ -451,6 +451,7 @@ const exportBookmarksBtn = document.getElementById('exportBookmarksBtn');
 const closeExtensionBtn = document.getElementById('closeExtensionBtn');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
 const autoClearCacheSelect = document.getElementById('autoClearCache');
+const defaultFolderSelect = document.getElementById('defaultFolderSelect');
 const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
 const accentColorPicker = document.getElementById('accentColorPicker');
@@ -521,6 +522,8 @@ async function init() {
   await loadSafetyHistory();
   await loadAutoClearSetting();
   await loadBookmarks();
+  populateDefaultFolderSelect();
+  await expandToDefaultFolder();
   setupEventListeners();
   renderBookmarks();
 
@@ -883,6 +886,75 @@ async function loadBookmarks() {
   } catch (error) {
     console.error('Error loading bookmarks:', error);
     showError('Failed to load bookmarks');
+  }
+}
+
+// Populate default folder select dropdown
+function populateDefaultFolderSelect() {
+  if (!defaultFolderSelect) return;
+
+  // Clear existing options except the root option
+  defaultFolderSelect.innerHTML = '<option value="">Root (All Bookmarks)</option>';
+
+  // Recursively collect all folders
+  const folders = [];
+  function collectFolders(nodes, depth = 0) {
+    nodes.forEach(node => {
+      if (node.children) {
+        const indent = '  '.repeat(depth);
+        folders.push({
+          id: node.id,
+          title: indent + (node.title || 'Unnamed Folder'),
+          depth: depth
+        });
+        collectFolders(node.children, depth + 1);
+      }
+    });
+  }
+
+  collectFolders(bookmarkTree);
+
+  // Add folders to select
+  folders.forEach(folder => {
+    const option = document.createElement('option');
+    option.value = folder.id;
+    option.textContent = folder.title;
+    defaultFolderSelect.appendChild(option);
+  });
+
+  // Load saved default folder
+  const savedDefaultFolder = localStorage.getItem('defaultStartFolder');
+  if (savedDefaultFolder) {
+    defaultFolderSelect.value = savedDefaultFolder;
+  }
+}
+
+// Expand to default folder on load
+async function expandToDefaultFolder() {
+  const defaultFolderId = localStorage.getItem('defaultStartFolder');
+  if (!defaultFolderId) return;
+
+  // Find the path to this folder (all parent folders)
+  const pathToFolder = [];
+  function findPath(nodes, targetId, path = []) {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        return [...path, node.id];
+      }
+      if (node.children) {
+        const found = findPath(node.children, targetId, [...path, node.id]);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const path = findPath(bookmarkTree, defaultFolderId);
+  if (path) {
+    // Expand all folders in the path
+    path.forEach(folderId => {
+      expandedFolders.add(folderId);
+    });
   }
 }
 
@@ -4809,6 +4881,16 @@ function setupEventListeners() {
     // Run auto-clear immediately if enabled
     if (autoClearDays !== 'never') {
       await clearOldCacheEntries(autoClearDays);
+    }
+  });
+
+  // Default start folder setting
+  defaultFolderSelect.addEventListener('change', (e) => {
+    const selectedFolderId = e.target.value;
+    if (selectedFolderId) {
+      localStorage.setItem('defaultStartFolder', selectedFolderId);
+    } else {
+      localStorage.removeItem('defaultStartFolder');
     }
   });
 
