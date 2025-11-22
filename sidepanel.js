@@ -461,8 +461,6 @@ const whitelistCount = document.getElementById('whitelistCount');
 const emptyWhitelistMessage = document.getElementById('emptyWhitelistMessage');
 const accentColorPicker = document.getElementById('accentColorPicker');
 const resetAccentColorBtn = document.getElementById('resetAccentColor');
-const doneAccentColorBtn = document.getElementById('doneAccentColor');
-const accentColorTooltip = document.getElementById('accentColorTooltip');
 const backgroundImagePicker = document.getElementById('backgroundImagePicker');
 const chooseBackgroundImageBtn = document.getElementById('chooseBackgroundImage');
 const removeBackgroundImageBtn = document.getElementById('removeBackgroundImage');
@@ -4977,26 +4975,11 @@ function setupEventListeners() {
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
   });
 
-  // Show tooltip when color picker is clicked
-  accentColorPicker.addEventListener('click', () => {
-    accentColorTooltip.style.display = 'block';
-  });
-
   // Accent color picker
   accentColorPicker.addEventListener('input', (e) => {
     const color = e.target.value;
     applyAccentColor(color);
     localStorage.setItem('customAccentColor', color);
-  });
-
-  // Hide tooltip when color picker loses focus or closes
-  accentColorPicker.addEventListener('blur', () => {
-    // Small delay to allow clicking Done button
-    setTimeout(() => {
-      if (document.activeElement !== doneAccentColorBtn) {
-        accentColorTooltip.style.display = 'none';
-      }
-    }, 100);
   });
 
   // Reset accent color
@@ -5005,12 +4988,6 @@ function setupEventListeners() {
     accentColorPicker.value = defaultColor;
     applyAccentColor(defaultColor);
     localStorage.removeItem('customAccentColor');
-  });
-
-  // Done button - close settings menu and hide tooltip
-  doneAccentColorBtn.addEventListener('click', () => {
-    accentColorTooltip.style.display = 'none';
-    closeAllMenus();
   });
 
   // Load saved accent color on startup
