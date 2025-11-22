@@ -1032,6 +1032,12 @@
     .filter-chip.active:hover {
       background: var(--md-sys-color-primary-container);
       transform: translateY(-1px);
+    }
+
+    .filter-chip-compact {
+      padding: 3px 4px;
+      gap: 2px;
+      font-size: 8px;
       box-shadow: var(--md-elevation-3);
     }
 
@@ -2179,19 +2185,25 @@
     </button>
     <div style="flex-basis: 100%; height: 0;"></div>
     <div style="width: 25px; flex-shrink: 0;"></div>
-    <button class="filter-chip" data-filter="safe" title="Show only safe URLs">
+    <button class="filter-chip filter-chip-compact" data-filter="safe" title="Show only safe URLs">
       <svg width="12" height="12" fill="var(--md-sys-color-success)" viewBox="0 0 24 24">
         <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
       </svg>
       <span>Safe</span>
     </button>
-    <button class="filter-chip" data-filter="suspicious" title="Show only suspicious URLs">
+    <button class="filter-chip filter-chip-compact" data-filter="trusted" title="Show only trusted (whitelisted) URLs">
+      <svg width="12" height="12" fill="white" stroke="var(--md-sys-color-outline)" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
+      </svg>
+      <span>Trusted</span>
+    </button>
+    <button class="filter-chip filter-chip-compact" data-filter="suspicious" title="Show only suspicious URLs">
       <svg width="12" height="12" fill="var(--md-sys-color-warning)" viewBox="0 0 24 24">
         <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M13,7H11V13H13V7M13,17H11V15H13V17Z"/>
       </svg>
       <span>Suspicious</span>
     </button>
-    <button class="filter-chip" data-filter="unsafe" title="Show only unsafe URLs">
+    <button class="filter-chip filter-chip-compact" data-filter="unsafe" title="Show only unsafe URLs">
       <svg width="12" height="12" fill="var(--md-sys-color-error)" viewBox="0 0 24 24">
         <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,7C13.1,7 14,7.9 14,9V10.5L15.5,10.5C16.3,10.5 17,11.2 17,12V16C17,16.8 16.3,17.5 15.5,17.5H8.5C7.7,17.5 7,16.8 7,16V12C7,11.2 7.7,10.5 8.5,10.5H10V9C10,7.9 10.9,7 12,7M12,8.2C11.2,8.2 10.8,8.7 10.8,9V10.5H13.2V9C13.2,8.7 12.8,8.2 12,8.2Z"/>
       </svg>
