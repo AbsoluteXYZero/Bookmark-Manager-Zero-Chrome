@@ -4915,13 +4915,15 @@ function setupEventListeners() {
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
   });
 
-  // Accent color picker - no longer applies on input, only when Done is clicked
-
-  // Done button for accent color
-  doneAccentColorBtn.addEventListener('click', () => {
-    const color = accentColorPicker.value;
+  // Accent color picker - applies in real-time as user picks
+  accentColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
     applyAccentColor(color);
     localStorage.setItem('customAccentColor', color);
+  });
+
+  // Done button for accent color - just closes the menu
+  doneAccentColorBtn.addEventListener('click', () => {
     closeAllMenus();
   });
 
@@ -5001,13 +5003,15 @@ function setupEventListeners() {
     document.body.classList.add('dark-text-mode');
   }
 
-  // Text Color Picker - no longer applies on input, only when Done is clicked
-
-  // Done button for text color
-  doneTextColorBtn.addEventListener('click', () => {
-    const color = textColorPicker.value;
+  // Text Color Picker - applies in real-time as user picks
+  textColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
     applyCustomTextColor(color);
     localStorage.setItem('customTextColor', color);
+  });
+
+  // Done button for text color - just closes the menu
+  doneTextColorBtn.addEventListener('click', () => {
     closeAllMenus();
   });
 
