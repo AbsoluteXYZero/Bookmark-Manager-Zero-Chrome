@@ -29,6 +29,7 @@
       --md-elevation-1: 0 1px 2px 0 rgb(0 0 0 / 0.05);
       --md-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.1);
       --md-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+      --bookmark-container-opacity: 1;
     }
 
     /* Blue Dark Theme (Default) */
@@ -362,7 +363,7 @@
 
     /* Bookmark Item Styles */
     .bookmark-item {
-      background: var(--md-sys-color-surface-container);
+      background: transparent;
       border-radius: 12px;
       padding: 10px 12px;
       margin-bottom: 0;  /* Drop zones now provide spacing */
@@ -377,8 +378,25 @@
       z-index: 1;
     }
 
-    .bookmark-item:hover {
+    .bookmark-item::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--md-sys-color-surface-container);
+      opacity: var(--bookmark-container-opacity);
+      border-radius: 12px;
+      z-index: -1;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bookmark-item:hover::before {
       background: var(--md-sys-color-surface-container-high);
+    }
+
+    .bookmark-item:hover {
       box-shadow: var(--md-elevation-2);
       transform: translateY(-1px);
       border-color: var(--md-sys-color-primary);
@@ -1806,14 +1824,31 @@
     }
 
     /* Dark Text Mode Styles */
-    body.blue-dark.dark-text-mode .bookmark-item,
-    body.dark.dark-text-mode .bookmark-item {
+    /* Dark text for light backgrounds (on dark themes) */
+    body.blue-dark.dark-text-mode .bookmark-title,
+    body.blue-dark.dark-text-mode .folder-title,
+    body.dark.dark-text-mode .bookmark-title,
+    body.dark.dark-text-mode .folder-title {
       color: #1a1a1a !important;
+      text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
     }
 
-    body.blue-dark.dark-text-mode .folder-name,
-    body.dark.dark-text-mode .folder-name {
-      color: #1a1a1a !important;
+    body.blue-dark.dark-text-mode .bookmark-url,
+    body.dark.dark-text-mode .bookmark-url {
+      color: #3a3a3a !important;
+      text-shadow: 0 0 2px rgba(255, 255, 255, 0.5);
+    }
+
+    /* Light text for dark backgrounds (on light theme) */
+    body.light.dark-text-mode .bookmark-title,
+    body.light.dark-text-mode .folder-title {
+      color: #e8e8e8 !important;
+      text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+    }
+
+    body.light.dark-text-mode .bookmark-url {
+      color: #c8c8c8 !important;
+      text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
     }
   </style>
 </head>

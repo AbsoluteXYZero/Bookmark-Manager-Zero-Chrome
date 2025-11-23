@@ -4962,9 +4962,7 @@ function setupEventListeners() {
     const value = e.target.value;
     containerOpacityValue.textContent = value + '%';
     const opacity = value / 100;
-    document.querySelectorAll('.bookmark-item').forEach(item => {
-      item.style.opacity = opacity;
-    });
+    document.documentElement.style.setProperty('--bookmark-container-opacity', opacity);
     localStorage.setItem('containerOpacity', value);
   });
 
@@ -4974,9 +4972,10 @@ function setupEventListeners() {
     containerOpacity.value = savedOpacity;
     containerOpacityValue.textContent = savedOpacity + '%';
     const opacity = savedOpacity / 100;
-    document.querySelectorAll('.bookmark-item').forEach(item => {
-      item.style.opacity = opacity;
-    });
+    document.documentElement.style.setProperty('--bookmark-container-opacity', opacity);
+  } else {
+    // Set default 100% opacity
+    document.documentElement.style.setProperty('--bookmark-container-opacity', 1);
   }
 
   // Dark Text Toggle
@@ -5014,7 +5013,7 @@ function setupEventListeners() {
 
   // Apply custom text color
   function applyCustomTextColor(color) {
-    document.querySelectorAll('.bookmark-item, .folder-name').forEach(item => {
+    document.querySelectorAll('.bookmark-title, .folder-title, .bookmark-url').forEach(item => {
       item.style.color = color;
     });
   }
