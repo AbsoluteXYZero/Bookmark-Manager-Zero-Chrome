@@ -118,15 +118,15 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 ### User Experience
 - 🎨 **3 Themes** - Blue Dark (default), Light, Dark
 - 🎨 **Custom Accent Colors** - Pick any color for theme customization
-- 🎨 **Bookmark Opacity Control** - Adjust transparency of bookmark items (0-100%)
-- 🌓 **Text Color Inversion** - Toggle dark text mode for better contrast
-- 🎨 **Custom Text Colors** - Full color picker for bookmark text customization
+- 🎨 **Bookmark Background Opacity** - Adjust bookmark background transparency (0-100%) while keeping text at full opacity
+- 🌓 **Theme-Aware Text Inversion** - Toggle between dark/light text with automatic theme adaptation for optimal contrast
+- ✍️ **Custom Text Colors** - Visual color picker for bookmark and folder text with reset button
 - 🖼️ **Custom Backgrounds** - Upload and position your own background images
 - ⌨️ **Keyboard Navigation** - Full keyboard support with arrow keys
 - ♿ **Accessibility** - Comprehensive ARIA labels and keyboard traps
 - 🔍 **Zoom Control** - 50% - 200% zoom levels for bookmark content
 - 📏 **GUI Scaling** - 80% - 140% scaling for interface elements
-- 📱 **Responsive Design** - Adapts to side panel width with smart menu positioning
+- 📱 **Responsive Design** - Adapts to side panel width with smart menu positioning (16px margins)
 
 ### Advanced Features
 - 🖼️ **Website Previews** - Screenshot thumbnails of bookmarks
@@ -191,6 +191,8 @@ Click the gear icon to access:
 Click the theme icon to access:
 - **Theme:** Choose from 3 themes (Blue Dark, Light, Dark)
 - **Accent Color:** Customize theme accent color
+- **Bookmark Opacity:** Adjust bookmark background transparency (0-100%)
+- **Invert Text Color:** Toggle theme-aware text inversion for better contrast
 - **Text Color:** Customize bookmark text color with visual color picker
 - **Custom Background:** Upload and position your own background image
 - **Zoom:** Adjust bookmark content size (50% - 200%)
@@ -437,20 +439,28 @@ Contributions welcome! Please:
 ### v1.7.0 (Current) - Enhanced Theming & Menu Improvements
 
 **New Features:**
-- 🎨 **Bookmark Opacity Slider** - Control bookmark transparency (0-100%) directly from Theme menu
-- 🌓 **Invert Text Color Toggle** - Dark text mode for bookmarks and folders in Theme menu
-- 🎨 **Custom Text Color Picker** - Full color customization for bookmark text with reset button
+- 🎨 **Bookmark Opacity Slider** - Control bookmark background transparency (0-100%) directly from Theme menu
+- 🌓 **Theme-Aware Text Inversion** - Intelligent text color inversion that adapts to your theme (dark text on dark themes, light text on light theme)
+- ✍️ **Custom Text Color Picker** - Full color customization for bookmark and folder text with visual color picker and reset button
 
 **Improvements:**
 - 📐 **Improved Menu Positioning** - All menus (Theme, View, Zoom, Settings) now respect 16px margins from viewport edges
 - 🎯 **Enhanced Context Menu** - Bookmark context menus never extend behind toolbar, with better overflow handling
 - 📱 **Better Responsive Menus** - Menus scale properly to viewport width with increased margins for cleaner layout
 - 🎨 **Reorganized Theme Menu** - Opacity, text inversion, and text color controls now in Theme menu for better organization
+- 🎯 **Reduced Font Sizes** - Accent Color and Text Color labels now use matching 11px font size for consistency
 
 **Bug Fixes:**
 - 🐛 Fixed context menus sometimes positioning behind header/toolbar
 - 🐛 Fixed menu overflow on narrow viewports
 - 🐛 Improved menu positioning calculations for edge cases
+- 🐛 Fixed opacity affecting text readability (now only affects background via CSS pseudo-element)
+- 🐛 Fixed text inversion not targeting correct elements
+
+**Technical Implementation:**
+- **Bookmark Opacity**: Uses CSS `::before` pseudo-element to apply opacity only to the background layer, keeping text and icons at full opacity for better readability. The opacity value is controlled via CSS variable `--bookmark-container-opacity`.
+- **Text Inversion**: Theme-aware CSS selectors apply dark text (#1a1a1a) on dark themes and light text (#e8e8e8) on light theme, with text-shadow for enhanced contrast.
+- **Text Color**: Targets `.bookmark-title`, `.folder-title`, and `.bookmark-url` elements specifically for precise color control.
 
 ---
 
