@@ -442,25 +442,34 @@ Contributions welcome! Please:
 - 🎨 **Bookmark Opacity Slider** - Control bookmark background transparency (0-100%) directly from Theme menu
 - 🌓 **Theme-Aware Text Inversion** - Intelligent text color inversion that adapts to your theme (dark text on dark themes, light text on light theme)
 - ✍️ **Custom Text Color Picker** - Full color customization for bookmark and folder text with visual color picker and reset button
+- ⚡ **Real-Time Color Preview** - Color pickers (Accent & Text) apply changes instantly as you drag the picker
+- ✅ **Done Buttons for Color Pickers** - Both Accent Color and Text Color pickers include Done buttons for easy menu closing
 
 **Improvements:**
 - 📐 **Improved Menu Positioning** - All menus (Theme, View, Zoom, Settings) now respect 16px margins from viewport edges
 - 🎯 **Enhanced Context Menu** - Bookmark context menus never extend behind toolbar, with better overflow handling
 - 📱 **Better Responsive Menus** - Menus scale properly to viewport width with increased margins for cleaner layout
-- 🎨 **Reorganized Theme Menu** - Opacity, text inversion, and text color controls now in Theme menu for better organization
+- 🎨 **Reorganized Theme Menu** - Accent Color moved to top, followed by Text Color, with Opacity and Invert Text Color at bottom for logical grouping
 - 🎯 **Reduced Font Sizes** - Accent Color and Text Color labels now use matching 11px font size for consistency
+- 🔒 **Smart Button Positioning** - Theme menu never covers the Theme button, ensuring button always stays visible and clickable
 
 **Bug Fixes:**
+- 🐛 Fixed toolbar menus (Theme, View, Zoom) not opening - incorrect positioning function was being used
+- 🐛 Fixed ::before pseudo-element conflict with drag-and-drop indicators using :not() selectors
 - 🐛 Fixed context menus sometimes positioning behind header/toolbar
 - 🐛 Fixed menu overflow on narrow viewports
 - 🐛 Improved menu positioning calculations for edge cases
 - 🐛 Fixed opacity affecting text readability (now only affects background via CSS pseudo-element)
 - 🐛 Fixed text inversion not targeting correct elements
+- 🐛 Fixed text color reverting when folders expand/collapse - now uses CSS variables for persistence
+- 🐛 Fixed text color not affecting bookmark URLs (now applies to URLs in addition to titles and folder names)
+- 🐛 Fixed theme button getting covered by its own menu when viewport space is limited
 
 **Technical Implementation:**
-- **Bookmark Opacity**: Uses CSS `::before` pseudo-element to apply opacity only to the background layer, keeping text and icons at full opacity for better readability. The opacity value is controlled via CSS variable `--bookmark-container-opacity`.
+- **Bookmark Opacity**: Uses CSS `::before` pseudo-element to apply opacity only to the background layer, keeping text and icons at full opacity for better readability. The opacity value is controlled via CSS variable `--bookmark-container-opacity`. The :not() selectors prevent conflicts with drag-and-drop indicators.
 - **Text Inversion**: Theme-aware CSS selectors apply dark text (#1a1a1a) on dark themes and light text (#e8e8e8) on light theme, with text-shadow for enhanced contrast.
-- **Text Color**: Targets `.bookmark-title`, `.folder-title`, and `.bookmark-url` elements specifically for precise color control.
+- **Text Color**: Uses CSS variable `--custom-text-color` that persists across dynamic DOM changes. Targets `.bookmark-title`, `.folder-title`, and `.bookmark-url` elements specifically for precise color control that survives folder expand/collapse operations.
+- **Menu Positioning**: Toolbar menus use `positionFixedDropdown()` while context menus use `adjustDropdownPosition()` to ensure proper positioning relative to their trigger elements.
 
 ---
 
