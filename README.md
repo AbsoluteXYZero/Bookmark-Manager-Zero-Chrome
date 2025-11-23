@@ -170,7 +170,7 @@ Coming soon - awaiting Chrome review
 - **Search:** Type in the search bar to filter by title/URL
 - **Filter by Status:** Click the filter icon to show filters:
   - **Link Status:** Live, Parked, Dead
-  - **Safety Status:** Safe, Suspicious, Unsafe
+  - **Safety Status:** Safe, Suspicious, Unsafe, Trusted (whitelisted)
 - **Multiple Filters:** Select multiple filters simultaneously
   - Filters in the same category use OR logic (e.g., Live + Dead shows both)
   - Filters across categories use AND logic (e.g., Live + Safe shows only live AND safe bookmarks)
@@ -191,6 +191,7 @@ Click the gear icon to access:
 Click the theme icon to access:
 - **Theme:** Choose from 3 themes (Blue Dark, Light, Dark)
 - **Accent Color:** Customize theme accent color
+- **Text Color:** Customize bookmark text color with visual color picker
 - **Custom Background:** Upload and position your own background image
 - **Zoom:** Adjust bookmark content size (50% - 200%)
 - **GUI Scale:** Adjust interface element size (80% - 140%)
