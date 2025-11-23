@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-1.7.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -106,6 +106,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - 👆 **Clickable Status Icons** - Click shield or chain icons for full status details popup
 - 🔄 **HTTP Redirect Detection** - Detects when HTTP bookmarks redirect to HTTPS
 - ✅ **Whitelist Support** - Mark trusted URLs to skip safety checks
+- ⚪ **Trusted Filter** - Filter to view only whitelisted bookmarks (white shield)
 - 📜 **Safety History** - Track status changes over time
 
 ### Privacy & Security
@@ -116,10 +117,16 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### User Experience
 - 🎨 **3 Themes** - Blue Dark (default), Light, Dark
+- 🎨 **Custom Accent Colors** - Pick any color for theme customization
+- 🎨 **Bookmark Background Opacity** - Adjust bookmark background transparency (0-100%) while keeping text at full opacity
+- 🌓 **Theme-Aware Text Inversion** - Toggle between dark/light text with automatic theme adaptation for optimal contrast
+- ✍️ **Custom Text Colors** - Visual color picker for bookmark and folder text with reset button
+- 🖼️ **Custom Backgrounds** - Upload and position your own background images
 - ⌨️ **Keyboard Navigation** - Full keyboard support with arrow keys
 - ♿ **Accessibility** - Comprehensive ARIA labels and keyboard traps
-- 🔍 **Zoom Control** - 50% - 200% zoom levels
-- 📱 **Responsive Design** - Adapts to side panel width
+- 🔍 **Zoom Control** - 50% - 200% zoom levels for bookmark content
+- 📏 **GUI Scaling** - 80% - 140% scaling for interface elements
+- 📱 **Responsive Design** - Adapts to side panel width with smart menu positioning (16px margins)
 
 ### Advanced Features
 - 🖼️ **Website Previews** - Screenshot thumbnails of bookmarks
@@ -163,7 +170,7 @@ Coming soon - awaiting Chrome review
 - **Search:** Type in the search bar to filter by title/URL
 - **Filter by Status:** Click the filter icon to show filters:
   - **Link Status:** Live, Parked, Dead
-  - **Safety Status:** Safe, Suspicious, Unsafe
+  - **Safety Status:** Safe, Suspicious, Unsafe, Trusted (whitelisted)
 - **Multiple Filters:** Select multiple filters simultaneously
   - Filters in the same category use OR logic (e.g., Live + Dead shows both)
   - Filters across categories use AND logic (e.g., Live + Safe shows only live AND safe bookmarks)
@@ -177,10 +184,19 @@ Coming soon - awaiting Chrome review
 Click the gear icon to access:
 - **Display Options:** Toggle title, URL, status indicators, previews
 - **View Mode:** Switch between list and grid layouts
-- **Theme:** Choose from 3 themes
-- **Zoom:** Adjust interface size
+- **Default Start Folder:** Choose which folder to expand on sidebar load
 - **Cache Management:** Configure auto-clear settings
 - **API Keys:** Set up optional security API keys
+
+Click the theme icon to access:
+- **Theme:** Choose from 3 themes (Blue Dark, Light, Dark)
+- **Accent Color:** Customize theme accent color
+- **Bookmark Opacity:** Adjust bookmark background transparency (0-100%)
+- **Invert Text Color:** Toggle theme-aware text inversion for better contrast
+- **Text Color:** Customize bookmark text color with visual color picker
+- **Custom Background:** Upload and position your own background image
+- **Zoom:** Adjust bookmark content size (50% - 200%)
+- **GUI Scale:** Adjust interface element size (80% - 140%)
 
 ### Keyboard Shortcuts
 
@@ -339,6 +355,9 @@ If all above checks pass, the URL is analyzed for suspicious patterns:
 Users can whitelist specific URLs to:
 - Skip safety checks for trusted sites
 - Override false positives
+- Whitelisted bookmarks display a white shield indicator instead of green
+- Add/remove from whitelist via bookmark context menu (right-click)
+- Use the "Trusted" filter to view all whitelisted bookmarks
 - Whitelist is stored locally and persists across sessions
 
 ## Permissions
@@ -417,7 +436,64 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v1.5.0 (Current) - Grid View & Link Detection Improvements
+### v1.7.0 (Current) - Enhanced Theming & Menu Improvements
+
+**New Features:**
+- 🎨 **Bookmark Opacity Slider** - Control bookmark background transparency (0-100%) directly from Theme menu
+- 🌓 **Theme-Aware Text Inversion** - Intelligent text color inversion that adapts to your theme (dark text on dark themes, light text on light theme)
+- ✍️ **Custom Text Color Picker** - Full color customization for bookmark and folder text with visual color picker and reset button
+- ⚡ **Real-Time Color Preview** - Color pickers (Accent & Text) apply changes instantly as you drag the picker
+- ✅ **Done Buttons for Color Pickers** - Both Accent Color and Text Color pickers include Done buttons for easy menu closing
+
+**Improvements:**
+- 📐 **Improved Menu Positioning** - All menus (Theme, View, Zoom, Settings) now respect 16px margins from viewport edges
+- 🎯 **Enhanced Context Menu** - Bookmark context menus never extend behind toolbar, with better overflow handling
+- 📱 **Better Responsive Menus** - Menus scale properly to viewport width with increased margins for cleaner layout
+- 🎨 **Reorganized Theme Menu** - Accent Color moved to top, followed by Text Color, with Opacity and Invert Text Color at bottom for logical grouping
+- 🎯 **Reduced Font Sizes** - Accent Color and Text Color labels now use matching 11px font size for consistency
+- 🔒 **Smart Button Positioning** - Theme menu never covers the Theme button, ensuring button always stays visible and clickable
+
+**Bug Fixes:**
+- 🐛 Fixed toolbar menus (Theme, View, Zoom) not opening - incorrect positioning function was being used
+- 🐛 Fixed ::before pseudo-element conflict with drag-and-drop indicators using :not() selectors
+- 🐛 Fixed context menus sometimes positioning behind header/toolbar
+- 🐛 Fixed menu overflow on narrow viewports
+- 🐛 Improved menu positioning calculations for edge cases
+- 🐛 Fixed opacity affecting text readability (now only affects background via CSS pseudo-element)
+- 🐛 Fixed text inversion not targeting correct elements
+- 🐛 Fixed text color reverting when folders expand/collapse - now uses CSS variables for persistence
+- 🐛 Fixed text color not affecting bookmark URLs (now applies to URLs in addition to titles and folder names)
+- 🐛 Fixed theme button getting covered by its own menu when viewport space is limited
+
+**Technical Implementation:**
+- **Bookmark Opacity**: Uses CSS `::before` pseudo-element to apply opacity only to the background layer, keeping text and icons at full opacity for better readability. The opacity value is controlled via CSS variable `--bookmark-container-opacity`. The :not() selectors prevent conflicts with drag-and-drop indicators.
+- **Text Inversion**: Theme-aware CSS selectors apply dark text (#1a1a1a) on dark themes and light text (#e8e8e8) on light theme, with text-shadow for enhanced contrast.
+- **Text Color**: Uses CSS variable `--custom-text-color` that persists across dynamic DOM changes. Targets `.bookmark-title`, `.folder-title`, and `.bookmark-url` elements specifically for precise color control that survives folder expand/collapse operations.
+- **Menu Positioning**: Toolbar menus use `positionFixedDropdown()` while context menus use `adjustDropdownPosition()` to ensure proper positioning relative to their trigger elements.
+
+---
+
+### v1.6.0 - UI Refinements & Custom Navigation
+
+**New Features:**
+- 📁 **Default Start Folder** - Choose which folder to auto-expand when opening the sidebar
+- ⚪ **Trusted Filter** - New filter chip to view only whitelisted bookmarks (white shield icon at far right)
+- 🎨 **Accent Color in Theme Menu** - Moved accent color picker from settings to theme menu for better organization
+- 📏 **Compact Filter Chips** - Reduced size of safety filter chips so all 4 fit on one line
+
+**Improvements:**
+- 🔄 **Streamlined Whitelist Management** - Removed whitelist panel from settings menu; use Trusted filter instead
+- 🎯 **Simplified Accent Color Picker** - Removed Done button as changes apply instantly
+- 📐 **Compact Background Settings** - Reduced size of background image controls to save screen space
+- 🎯 **Reorganized Settings** - Theme-related settings (theme, accent color, background, zoom, GUI scale) moved to theme menu
+
+**Bug Fixes:**
+- 🐛 Fixed accent color picker triggering theme switch when clicked
+- 🐛 Fixed Safe filter excluding whitelisted bookmarks (now separate Trusted filter)
+
+---
+
+### v1.5.0 - Grid View & Link Detection Improvements
 
 **New Features:**
 - 📐 **Square Card Layout** - Bookmarks display as square cards in grid view with aspect-ratio

@@ -404,6 +404,7 @@ let displayOptions = {
 };
 let currentEditItem = null;
 let zoomLevel = 80;
+let guiScale = 100; // GUI scale for header/toolbar/menus
 let checkedBookmarks = new Set(); // Track which bookmarks have been checked to prevent infinite loops
 let scanCancelled = false; // Flag to cancel ongoing scans
 let linkCheckingEnabled = true; // Toggle for link checking
@@ -450,8 +451,40 @@ const exportBookmarksBtn = document.getElementById('exportBookmarksBtn');
 const closeExtensionBtn = document.getElementById('closeExtensionBtn');
 const clearCacheBtn = document.getElementById('clearCacheBtn');
 const autoClearCacheSelect = document.getElementById('autoClearCache');
+const defaultFolderSelect = document.getElementById('defaultFolderSelect');
 const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
+const accentColorPicker = document.getElementById('accentColorPicker');
+const doneAccentColorBtn = document.getElementById('doneAccentColor');
+const resetAccentColorBtn = document.getElementById('resetAccentColor');
+const containerOpacity = document.getElementById('containerOpacity');
+const containerOpacityValue = document.getElementById('containerOpacityValue');
+const darkTextToggle = document.getElementById('darkTextToggle');
+const textColorPicker = document.getElementById('textColorPicker');
+const doneTextColorBtn = document.getElementById('doneTextColor');
+const resetTextColor = document.getElementById('resetTextColor');
+const backgroundImagePicker = document.getElementById('backgroundImagePicker');
+const chooseBackgroundImageBtn = document.getElementById('chooseBackgroundImage');
+const removeBackgroundImageBtn = document.getElementById('removeBackgroundImage');
+const backgroundOpacitySlider = document.getElementById('backgroundOpacity');
+const backgroundBlurSlider = document.getElementById('backgroundBlur');
+const opacityValue = document.getElementById('opacityValue');
+const blurValue = document.getElementById('blurValue');
+const backgroundSizeSelect = document.getElementById('backgroundSize');
+const repositionBackgroundBtn = document.getElementById('repositionBackground');
+const backgroundScaleSlider = document.getElementById('backgroundScale');
+const scaleValue = document.getElementById('scaleValue');
+const dragModeOverlay = document.getElementById('dragModeOverlay');
+const closeDragModeBtn = document.getElementById('closeDragModeBtn');
+const guiScaleSelect = document.getElementById('guiScaleSelect');
+
+// Add hover effects to Exit & Save button (CSP-compliant)
+closeDragModeBtn.addEventListener('mouseover', () => {
+  closeDragModeBtn.style.background = 'rgba(255, 255, 255, 0.3)';
+});
+closeDragModeBtn.addEventListener('mouseout', () => {
+  closeDragModeBtn.style.background = 'rgba(255, 255, 255, 0.2)';
+});
 
 // Scan status bar DOM elements
 const scanStatusBar = document.getElementById('scanStatusBar');
@@ -490,11 +523,14 @@ async function init() {
   loadTheme();
   loadView();
   loadZoom();
+  loadGuiScale();
   loadCheckingSettings();
   await loadWhitelist();
   await loadSafetyHistory();
   await loadAutoClearSetting();
   await loadBookmarks();
+  populateDefaultFolderSelect();
+  await expandToDefaultFolder();
   setupEventListeners();
   renderBookmarks();
 
@@ -548,6 +584,107 @@ function loadTheme() {
   });
 }
 
+// Store current custom accent color globally
+let currentCustomAccentColor = null;
+
+// Apply custom accent color (global function so it can be called from applyTheme)
+function applyCustomAccentColor(color) {
+  currentCustomAccentColor = color;
+  // Convert hex to RGB for variations
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
+
+  // Create lighter container color (add 80 to each channel, cap at 255)
+  const containerR = Math.min(255, r + 80);
+  const containerG = Math.min(255, g + 80);
+  const containerB = Math.min(255, b + 80);
+  const containerColor = `#${containerR.toString(16).padStart(2, '0')}${containerG.toString(16).padStart(2, '0')}${containerB.toString(16).padStart(2, '0')}`;
+
+  // Remove existing custom accent style if it exists
+  let styleTag = document.getElementById('custom-accent-style');
+  if (styleTag) {
+    styleTag.remove();
+  }
+
+  // Inject a style tag with higher specificity selectors
+  styleTag = document.createElement('style');
+  styleTag.id = 'custom-accent-style';
+  styleTag.textContent = `
+    /* Use @layer to ensure these rules take priority */
+    @layer custom-accent {
+      html:root {
+        --md-sys-color-primary: ${color} !important;
+        --md-sys-color-primary-container: ${containerColor} !important;
+        --md-sys-color-secondary: ${color} !important;
+      }
+      html body.light,
+      html body.blue-dark,
+      html body.dark {
+        --md-sys-color-primary: ${color} !important;
+        --md-sys-color-primary-container: ${containerColor} !important;
+        --md-sys-color-secondary: ${color} !important;
+      }
+      /* Directly override border-left on folder-children */
+      .folder-children {
+        border-left: 2px solid ${color} !important;
+      }
+    }
+  `;
+  // Append to body instead of head for later cascade position
+  if (document.body) {
+    document.body.appendChild(styleTag);
+  } else {
+    document.head.appendChild(styleTag);
+  }
+
+  // Directly update all existing .folder-children elements
+  // This bypasses CSS variable resolution issues
+  document.querySelectorAll('.folder-children').forEach(element => {
+    element.style.setProperty('border-left-color', color, 'important');
+  });
+}
+
+// Set up MutationObserver to apply custom color to new folder-children elements
+if (typeof window.folderChildrenObserver === 'undefined') {
+  window.folderChildrenObserver = new MutationObserver((mutations) => {
+    if (!currentCustomAccentColor) return;
+
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.nodeType === 1) { // Element node
+          // Check if the node itself is folder-children
+          if (node.classList && node.classList.contains('folder-children')) {
+            node.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+          }
+          // Check descendants
+          if (node.querySelectorAll) {
+            node.querySelectorAll('.folder-children').forEach(element => {
+              element.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+            });
+          }
+        }
+      });
+
+      // Also check for class changes (when .show is added)
+      if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+        const target = mutation.target;
+        if (target.classList && target.classList.contains('folder-children')) {
+          target.style.setProperty('border-left-color', currentCustomAccentColor, 'important');
+        }
+      }
+    });
+  });
+
+  // Start observing
+  window.folderChildrenObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class']
+  });
+}
+
 // Apply theme
 function applyTheme() {
   // Remove all theme classes
@@ -555,6 +692,12 @@ function applyTheme() {
 
   // Add current theme class
   document.body.classList.add(theme);
+
+  // Reapply custom accent color if one is saved
+  const savedColor = localStorage.getItem('customAccentColor');
+  if (savedColor) {
+    applyCustomAccentColor(savedColor);
+  }
 }
 
 // Set theme
@@ -612,7 +755,41 @@ function loadZoom() {
     zoomLevel = result.zoomLevel || 80;
     applyZoom();
     updateZoomDisplay();
+    // Initialize slider progress bar
+    if (zoomSlider) {
+      const progress = ((zoomLevel - 50) / (200 - 50)) * 100;
+      zoomSlider.style.setProperty('--zoom-progress', `${progress}%`);
+    }
   });
+}
+
+// Load GUI scale preference
+function loadGuiScale() {
+  const savedScale = localStorage.getItem('guiScale');
+  guiScale = savedScale ? parseInt(savedScale) : 100;
+  applyGuiScale();
+  if (guiScaleSelect) {
+    guiScaleSelect.value = guiScale;
+  }
+}
+
+// Apply GUI scale to header, toolbar, filters, and status bar
+function applyGuiScale() {
+  const scaleFactor = guiScale / 100;
+
+  // Target elements: header, search, toolbar, filters, display options, status bar
+  const header = document.querySelector('.header');
+  const collapsibleHeader = document.getElementById('collapsibleHeader');
+  const filterBar = document.getElementById('filterBar');
+  const displayBar = document.getElementById('displayBar');
+  const scanStatusBar = document.querySelector('.scan-status-bar');
+
+  // Use CSS zoom property for proper scaling of all elements (text, spacing, borders, etc.)
+  if (header) header.style.zoom = scaleFactor;
+  if (collapsibleHeader) collapsibleHeader.style.zoom = scaleFactor;
+  if (filterBar) filterBar.style.zoom = scaleFactor;
+  if (displayBar) displayBar.style.zoom = scaleFactor;
+  if (scanStatusBar) scanStatusBar.style.zoom = scaleFactor;
 }
 
 // Load checking settings from localStorage
@@ -716,6 +893,75 @@ async function loadBookmarks() {
   } catch (error) {
     console.error('Error loading bookmarks:', error);
     showError('Failed to load bookmarks');
+  }
+}
+
+// Populate default folder select dropdown
+function populateDefaultFolderSelect() {
+  if (!defaultFolderSelect) return;
+
+  // Clear existing options except the root option
+  defaultFolderSelect.innerHTML = '<option value="">Root (All Bookmarks)</option>';
+
+  // Recursively collect all folders
+  const folders = [];
+  function collectFolders(nodes, depth = 0) {
+    nodes.forEach(node => {
+      if (node.children) {
+        const indent = '  '.repeat(depth);
+        folders.push({
+          id: node.id,
+          title: indent + (node.title || 'Unnamed Folder'),
+          depth: depth
+        });
+        collectFolders(node.children, depth + 1);
+      }
+    });
+  }
+
+  collectFolders(bookmarkTree);
+
+  // Add folders to select
+  folders.forEach(folder => {
+    const option = document.createElement('option');
+    option.value = folder.id;
+    option.textContent = folder.title;
+    defaultFolderSelect.appendChild(option);
+  });
+
+  // Load saved default folder
+  const savedDefaultFolder = localStorage.getItem('defaultStartFolder');
+  if (savedDefaultFolder) {
+    defaultFolderSelect.value = savedDefaultFolder;
+  }
+}
+
+// Expand to default folder on load
+async function expandToDefaultFolder() {
+  const defaultFolderId = localStorage.getItem('defaultStartFolder');
+  if (!defaultFolderId) return;
+
+  // Find the path to this folder (all parent folders)
+  const pathToFolder = [];
+  function findPath(nodes, targetId, path = []) {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        return [...path, node.id];
+      }
+      if (node.children) {
+        const found = findPath(node.children, targetId, [...path, node.id]);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  const path = findPath(bookmarkTree, defaultFolderId);
+  if (path) {
+    // Expand all folders in the path
+    path.forEach(folderId => {
+      expandedFolders.add(folderId);
+    });
   }
 }
 
@@ -1263,6 +1509,9 @@ Redirects to domain parking service" data-status-message="${escapedTooltip}">
 function getShieldHtml(safetyStatus, url, safetySources = []) {
   const encodedUrl = encodeURIComponent(url);
 
+  // Check if bookmark is whitelisted
+  const isWhitelisted = safetySources && safetySources.includes('Whitelisted by user');
+
   // Build sources text for unsafe tooltip
   const sourcesText = safetySources && safetySources.length > 0
     ? `\n⛔ Detected by: ${safetySources.join(', ')}`
@@ -1276,13 +1525,14 @@ function getShieldHtml(safetyStatus, url, safetySources = []) {
   // Build full messages for click popup
   const messages = {
     'safe': 'Security Check: Safe\n\n✓ Not found in malware databases\n✓ Passed URLhaus + BlockList checks',
+    'whitelisted': 'Security Check: Whitelisted\n\n✓ Manually trusted by user\n✓ Bypasses security checks',
     'warning': `Security Check: Warning\n\n${warningText}`,
     'unsafe': `Security Check: UNSAFE\n\n⛔ Malicious domain detected!${sourcesText}\n⛔ DO NOT VISIT - Exercise extreme caution!`,
     'checking': 'Security Check: Analyzing\n\nChecking URL security patterns...',
     'unknown': 'Security Check: Unknown\n\nUnable to determine safety status\nNot in whitelist or blacklist'
   };
 
-  const message = messages[safetyStatus] || messages['unknown'];
+  const message = isWhitelisted ? messages['whitelisted'] : (messages[safetyStatus] || messages['unknown']);
   const escapedMessage = message.replace(/"/g, '&quot;');
 
   const shieldSvgs = {
@@ -1290,6 +1540,15 @@ function getShieldHtml(safetyStatus, url, safetySources = []) {
       <span class="shield-indicator shield-safe clickable-status" title="Security Check: Safe
 ✓ Not found in malware databases
 ✓ Passed URLhaus + BlockList checks" data-status-message="${escapedMessage}">
+        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
+        </svg>
+      </span>
+    `,
+    'whitelisted': `
+      <span class="shield-indicator shield-whitelisted clickable-status" title="Security Check: Whitelisted
+✓ Manually trusted by user
+✓ Bypasses security checks" data-status-message="${escapedMessage}">
         <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
           <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M10,17L6,13L7.41,11.59L10,14.18L16.59,7.59L18,9L10,17Z"/>
         </svg>
@@ -1331,7 +1590,7 @@ Not in whitelist or blacklist" data-status-message="${escapedMessage}">
     `
   };
 
-  return shieldSvgs[safetyStatus] || shieldSvgs['unknown'];
+  return isWhitelisted ? shieldSvgs['whitelisted'] : (shieldSvgs[safetyStatus] || shieldSvgs['unknown']);
 }
 
 // Create folder element
@@ -1507,13 +1766,23 @@ function createBookmarkElement(bookmark) {
   const safetySources = bookmark.safetySources || [];
 
   // Build status indicators HTML based on display options
-  // Shield (safety) on top, chain (link status) on bottom
   let statusIndicatorsHtml = '';
   if (displayOptions.safetyStatus) {
     statusIndicatorsHtml += getShieldHtml(safetyStatus, bookmark.url, safetySources);
   }
   if (displayOptions.liveStatus) {
     statusIndicatorsHtml += getStatusDotHtml(linkStatus);
+  }
+
+  // Also build separate shield and chainlink for grid view
+  let shieldHtml = '';
+  if (displayOptions.safetyStatus) {
+    shieldHtml = getShieldHtml(safetyStatus, bookmark.url, safetySources);
+  }
+
+  let linkStatusHtml = '';
+  if (displayOptions.liveStatus) {
+    linkStatusHtml = getStatusDotHtml(linkStatus);
   }
 
   // Build favicon HTML based on display options
@@ -1542,6 +1811,11 @@ function createBookmarkElement(bookmark) {
       ${statusIndicatorsHtml}
     </div>
     ${faviconHtml}
+    <div class="bookmark-top-row">
+      ${shieldHtml}
+      ${faviconHtml}
+      ${linkStatusHtml}
+    </div>
     <div class="bookmark-info">
       ${bookmarkInfoHtml}
     </div>
@@ -1649,6 +1923,7 @@ function createBookmarkElement(bookmark) {
         e.target.closest('.bookmark-actions') ||
         e.target.closest('.bookmark-preview-container') ||
         e.target.closest('.status-indicators') ||
+        e.target.closest('.bookmark-top-row') ||
         e.target.closest('.item-checkbox')) {
       return;
     }
@@ -2155,8 +2430,19 @@ function repositionMenuIfNeeded(menu, parentElement) {
     const parentRect = parentElement.getBoundingClientRect();
     const menuHeight = menuRect.height;
 
+    // Get toolbar/header height to avoid positioning menus behind it
+    const header = document.querySelector('.header');
+    const collapsibleHeader = document.getElementById('collapsibleHeader');
+    let headerBottom = 0;
+    if (header) headerBottom = header.getBoundingClientRect().bottom;
+    if (collapsibleHeader) {
+      const collapsibleRect = collapsibleHeader.getBoundingClientRect();
+      headerBottom = Math.max(headerBottom, collapsibleRect.bottom);
+    }
+
     // Calculate available space above and below the parent element
-    const spaceAbove = parentRect.top;
+    // spaceAbove should exclude the header/toolbar area
+    const spaceAbove = parentRect.top - headerBottom;
     const spaceBelow = viewportHeight - parentRect.bottom;
 
     // Reset styles
@@ -2178,12 +2464,12 @@ function repositionMenuIfNeeded(menu, parentElement) {
       // More space below - constrain height
       positionAbove = false;
       needsConstraint = true;
-      constrainedHeight = Math.max(spaceBelow - 8, 100);
+      constrainedHeight = Math.max(spaceBelow - 16, 100);
     } else {
       // More space above - constrain height
       positionAbove = true;
       needsConstraint = true;
-      constrainedHeight = Math.max(spaceAbove - 8, 100);
+      constrainedHeight = Math.max(spaceAbove - 16, 100);
     }
 
     // Apply positioning
@@ -2208,21 +2494,49 @@ function repositionMenuIfNeeded(menu, parentElement) {
     // Final safety check - ensure menu is within viewport after positioning
     requestAnimationFrame(() => {
       const finalRect = menu.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
 
-      // Check if menu extends beyond top of viewport
-      if (finalRect.top < 0) {
-        const overflow = Math.abs(finalRect.top);
+      // Check if menu extends beyond top of viewport (header area)
+      if (finalRect.top < headerBottom) {
+        const overflow = headerBottom - finalRect.top;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${currentMaxHeight - overflow - 8}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 16, 100)}px`;
         menu.style.overflowY = 'auto';
+        // Also adjust top position to be below header
+        if (positionAbove) {
+          menu.style.top = `${headerBottom + 16}px`;
+          menu.style.bottom = 'auto';
+          menu.style.position = 'fixed';
+        }
       }
 
       // Check if menu extends beyond bottom of viewport
       if (finalRect.bottom > viewportHeight) {
         const overflow = finalRect.bottom - viewportHeight;
         const currentMaxHeight = parseInt(menu.style.maxHeight) || finalRect.height;
-        menu.style.maxHeight = `${currentMaxHeight - overflow - 8}px`;
+        menu.style.maxHeight = `${Math.max(currentMaxHeight - overflow - 16, 100)}px`;
         menu.style.overflowY = 'auto';
+      }
+
+      // Check horizontal overflow - menu extends beyond right edge
+      if (finalRect.right > viewportWidth - 16) {
+        // Menu is too far right, align to right edge of parent
+        menu.style.left = 'auto';
+        menu.style.right = '0';
+      }
+
+      // Check horizontal overflow - menu extends beyond left edge
+      if (finalRect.left < 16) {
+        // Menu is too far left, align to left edge of parent
+        menu.style.left = '0';
+        menu.style.right = 'auto';
+      }
+
+      // Constrain menu width if it's wider than viewport
+      if (finalRect.width > viewportWidth - 32) {
+        menu.style.maxWidth = `${viewportWidth - 32}px`;
+        menu.style.left = '16px';
+        menu.style.right = 'auto';
       }
     });
   });
@@ -2532,7 +2846,60 @@ async function restoreFolderRecursive(folderData, parentId, index) {
   }
 }
 
-// Adjust dropdown position to prevent overflow
+// Position fixed dropdown menu relative to button
+function positionFixedDropdown(dropdown, button) {
+  if (!dropdown || !button) return;
+
+  requestAnimationFrame(() => {
+    const buttonRect = button.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // Reset positioning
+    dropdown.style.left = '';
+    dropdown.style.right = '';
+    dropdown.style.top = '';
+    dropdown.style.bottom = '';
+    dropdown.style.maxWidth = `${viewportWidth - 32}px`;
+
+    // Position below button, aligned to right edge of button
+    let top = buttonRect.bottom + 4;
+    let right = viewportWidth - buttonRect.right;
+
+    // Check if menu would go off bottom of screen
+    dropdown.style.visibility = 'hidden';
+    dropdown.style.display = 'block';
+    const menuHeight = dropdown.offsetHeight;
+    dropdown.style.visibility = '';
+    dropdown.style.display = '';
+
+    if (top + menuHeight > viewportHeight - 16) {
+      // Show above button instead
+      top = buttonRect.top - menuHeight - 4;
+      if (top < 16) {
+        // Not enough space above either, position below button with scrolling
+        // Ensure button remains visible and clickable
+        top = buttonRect.bottom + 4;
+        const availableHeight = viewportHeight - top - 16;
+        dropdown.style.maxHeight = `${Math.max(availableHeight, 150)}px`;
+        dropdown.style.overflowY = 'auto';
+      }
+    }
+
+    // Apply positioning
+    dropdown.style.top = `${top}px`;
+    dropdown.style.right = `${right}px`;
+
+    // Check if menu extends beyond left edge
+    const menuLeft = viewportWidth - right - dropdown.offsetWidth;
+    if (menuLeft < 16) {
+      dropdown.style.left = '16px';
+      dropdown.style.right = '16px';
+    }
+  });
+}
+
+// Adjust dropdown position to prevent overflow (for absolute positioned menus)
 function adjustDropdownPosition(dropdown) {
   if (!dropdown) return;
 
@@ -2544,6 +2911,7 @@ function adjustDropdownPosition(dropdown) {
   dropdown.style.bottom = '';
   dropdown.style.marginTop = '';
   dropdown.style.marginBottom = '';
+  dropdown.style.maxWidth = '';
 
   // Wait for next frame to ensure menu is visible and has dimensions
   requestAnimationFrame(() => {
@@ -2551,20 +2919,25 @@ function adjustDropdownPosition(dropdown) {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
 
+    // Constrain menu width to viewport
+    if (rect.width > viewportWidth - 32) {
+      dropdown.style.maxWidth = `${viewportWidth - 32}px`;
+    }
+
     // Check horizontal overflow
     if (rect.right > viewportWidth) {
-      // Menu extends beyond right edge
-      const overflow = rect.right - viewportWidth;
-      dropdown.style.right = '0';
-      dropdown.style.transform = `translateX(-${overflow + 8}px)`;
+      // Menu extends beyond right edge - align to right with padding
+      dropdown.style.right = '16px';
+      dropdown.style.left = 'auto';
+      dropdown.style.transform = '';
     } else if (rect.left < 0) {
-      // Menu extends beyond left edge
-      dropdown.style.left = '0';
+      // Menu extends beyond left edge - align to left with padding
+      dropdown.style.left = '16px';
       dropdown.style.right = 'auto';
     }
 
     // Check vertical overflow
-    if (rect.bottom > viewportHeight) {
+    if (rect.bottom > viewportHeight - 16) {
       // Menu extends beyond bottom edge - show above button instead
       dropdown.style.top = 'auto';
       dropdown.style.bottom = '100%';
@@ -2582,10 +2955,14 @@ function closeAllMenus() {
     // Reset positioning styles
     menu.style.top = '';
     menu.style.bottom = '';
+    menu.style.left = '';
+    menu.style.right = '';
     menu.style.marginTop = '';
     menu.style.marginBottom = '';
     menu.style.maxHeight = '';
+    menu.style.maxWidth = '';
     menu.style.overflowY = '';
+    menu.style.position = '';
   });
   settingsMenu.classList.remove('show');
   themeMenu.classList.remove('show');
@@ -3427,10 +3804,12 @@ function matchesFilter(bookmark) {
 
   const linkStatus = bookmark.linkStatus || 'unknown';
   const safetyStatus = bookmark.safetyStatus || 'unknown';
+  const safetySources = bookmark.safetySources || [];
+  const isWhitelisted = safetySources.includes('Whitelisted by user');
 
   // Separate filters by category
   const linkFilters = activeFilters.filter(f => ['live', 'parked', 'dead'].includes(f));
-  const safetyFilters = activeFilters.filter(f => ['safe', 'suspicious', 'unsafe'].includes(f));
+  const safetyFilters = activeFilters.filter(f => ['safe', 'suspicious', 'unsafe', 'trusted'].includes(f));
 
   // Check link status (OR within category)
   let matchesLink = true;
@@ -3450,9 +3829,10 @@ function matchesFilter(bookmark) {
   if (safetyFilters.length > 0) {
     matchesSafety = safetyFilters.some(filter => {
       switch (filter) {
-        case 'safe': return safetyStatus === 'safe';
+        case 'safe': return safetyStatus === 'safe' && !isWhitelisted;
         case 'suspicious': return safetyStatus === 'warning';
         case 'unsafe': return safetyStatus === 'unsafe';
+        case 'trusted': return isWhitelisted;
         default: return false;
       }
     });
@@ -4404,9 +4784,11 @@ function setupEventListeners() {
   // Theme menu
   themeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    themeMenu.classList.toggle('show');
-    if (themeMenu.classList.contains('show')) {
-      adjustDropdownPosition(themeMenu);
+    const wasOpen = themeMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      themeMenu.classList.add('show');
+      positionFixedDropdown(themeMenu, themeBtn);
     }
   });
 
@@ -4422,9 +4804,11 @@ function setupEventListeners() {
   // View menu
   viewBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    viewMenu.classList.toggle('show');
-    if (viewMenu.classList.contains('show')) {
-      adjustDropdownPosition(viewMenu);
+    const wasOpen = viewMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      viewMenu.classList.add('show');
+      positionFixedDropdown(viewMenu, viewBtn);
     }
   });
 
@@ -4440,24 +4824,42 @@ function setupEventListeners() {
   // Zoom menu
   zoomBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    zoomMenu.classList.toggle('show');
-    if (zoomMenu.classList.contains('show')) {
-      adjustDropdownPosition(zoomMenu);
+    const wasOpen = zoomMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      zoomMenu.classList.add('show');
+      positionFixedDropdown(zoomMenu, zoomBtn);
     }
   });
+
+  // Helper function to update slider progress bar
+  function updateSliderProgress(slider, value, min, max) {
+    const progress = ((value - min) / (max - min)) * 100;
+    slider.style.setProperty('--zoom-progress', `${progress}%`);
+  }
 
   // Zoom slider
   zoomSlider.addEventListener('input', (e) => {
     const newZoom = parseInt(e.target.value);
     setZoom(newZoom);
+    updateSliderProgress(e.target, newZoom, 50, 200);
+  });
+
+  // GUI scale select
+  guiScaleSelect.addEventListener('change', (e) => {
+    guiScale = parseInt(e.target.value);
+    applyGuiScale();
+    localStorage.setItem('guiScale', guiScale);
   });
 
   // Settings menu
   settingsBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    settingsMenu.classList.toggle('show');
-    if (settingsMenu.classList.contains('show')) {
-      adjustDropdownPosition(settingsMenu);
+    const wasOpen = settingsMenu.classList.contains('show');
+    closeAllMenus();
+    if (!wasOpen) {
+      settingsMenu.classList.add('show');
+      positionFixedDropdown(settingsMenu, settingsBtn);
       // Update cache size display when menu opens
       await updateCacheSizeDisplay();
     }
@@ -4492,6 +4894,16 @@ function setupEventListeners() {
     }
   });
 
+  // Default start folder setting
+  defaultFolderSelect.addEventListener('change', (e) => {
+    const selectedFolderId = e.target.value;
+    if (selectedFolderId) {
+      localStorage.setItem('defaultStartFolder', selectedFolderId);
+    } else {
+      localStorage.removeItem('defaultStartFolder');
+    }
+  });
+
   // Link checking toggle
   const enableLinkCheckingToggle = document.getElementById('enableLinkChecking');
   enableLinkCheckingToggle.addEventListener('change', (e) => {
@@ -4505,6 +4917,505 @@ function setupEventListeners() {
     safetyCheckingEnabled = e.target.checked;
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
   });
+
+  // Accent color picker - applies in real-time as user picks
+  accentColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
+    applyAccentColor(color);
+    localStorage.setItem('customAccentColor', color);
+  });
+
+  // Done button for accent color - just closes the menu
+  doneAccentColorBtn.addEventListener('click', () => {
+    closeAllMenus();
+  });
+
+  // Reset accent color
+  resetAccentColorBtn.addEventListener('click', () => {
+    const defaultColor = getDefaultAccentColor();
+    accentColorPicker.value = defaultColor;
+    applyAccentColor(defaultColor);
+    localStorage.removeItem('customAccentColor');
+  });
+
+  // Load saved accent color on startup
+  function loadSavedAccentColor() {
+    const savedColor = localStorage.getItem('customAccentColor');
+    if (savedColor) {
+      accentColorPicker.value = savedColor;
+      applyAccentColor(savedColor);
+    } else {
+      const defaultColor = getDefaultAccentColor();
+      accentColorPicker.value = defaultColor;
+    }
+  }
+
+  // Get default accent color based on current theme
+  function getDefaultAccentColor() {
+    const isDarkMode = document.body.classList.contains('blue-dark') || document.body.classList.contains('dark');
+    if (document.body.classList.contains('dark')) {
+      return '#bb86fc'; // Pure dark theme purple
+    } else if (isDarkMode) {
+      return '#818cf8'; // Blue dark theme
+    } else {
+      return '#6366f1'; // Light theme default
+    }
+  }
+
+  // Apply accent color by calling the global function
+  function applyAccentColor(color) {
+    applyCustomAccentColor(color);
+  }
+
+  // Container Opacity Slider
+  containerOpacity.addEventListener('input', (e) => {
+    const value = e.target.value;
+    containerOpacityValue.textContent = value + '%';
+    const opacity = value / 100;
+    document.documentElement.style.setProperty('--bookmark-container-opacity', opacity);
+    localStorage.setItem('containerOpacity', value);
+  });
+
+  // Load saved container opacity
+  const savedOpacity = localStorage.getItem('containerOpacity');
+  if (savedOpacity) {
+    containerOpacity.value = savedOpacity;
+    containerOpacityValue.textContent = savedOpacity + '%';
+    const opacity = savedOpacity / 100;
+    document.documentElement.style.setProperty('--bookmark-container-opacity', opacity);
+  } else {
+    // Set default 100% opacity
+    document.documentElement.style.setProperty('--bookmark-container-opacity', 1);
+  }
+
+  // Dark Text Toggle
+  darkTextToggle.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      document.body.classList.add('dark-text-mode');
+      localStorage.setItem('darkTextMode', 'true');
+    } else {
+      document.body.classList.remove('dark-text-mode');
+      localStorage.removeItem('darkTextMode');
+    }
+  });
+
+  // Load saved dark text mode
+  const savedDarkTextMode = localStorage.getItem('darkTextMode');
+  if (savedDarkTextMode === 'true') {
+    darkTextToggle.checked = true;
+    document.body.classList.add('dark-text-mode');
+  }
+
+  // Text Color Picker - applies in real-time as user picks
+  textColorPicker.addEventListener('input', (e) => {
+    const color = e.target.value;
+    applyCustomTextColor(color);
+    localStorage.setItem('customTextColor', color);
+  });
+
+  // Done button for text color - just closes the menu
+  doneTextColorBtn.addEventListener('click', () => {
+    closeAllMenus();
+  });
+
+  // Reset Text Color
+  resetTextColor.addEventListener('click', () => {
+    const defaultColor = '#ffffff';
+    textColorPicker.value = defaultColor;
+    applyCustomTextColor(defaultColor);
+    localStorage.removeItem('customTextColor');
+  });
+
+  // Apply custom text color using CSS variable
+  function applyCustomTextColor(color) {
+    document.documentElement.style.setProperty('--custom-text-color', color);
+  }
+
+  // Load saved text color on startup
+  function loadCustomTextColor() {
+    const savedColor = localStorage.getItem('customTextColor');
+    if (savedColor) {
+      textColorPicker.value = savedColor;
+      applyCustomTextColor(savedColor);
+    } else {
+      textColorPicker.value = '#ffffff';
+      applyCustomTextColor('#ffffff');
+    }
+  }
+
+  // Initialize accent color on page load
+  loadSavedAccentColor();
+
+  // Initialize custom text color on page load
+  loadCustomTextColor();
+
+  // Background image functionality
+  function applyBackgroundImage(imageData, opacity, blur, size, positionX, positionY, scale) {
+    if (imageData) {
+      // Create or update background overlay
+      let bgOverlay = document.getElementById('background-overlay');
+      if (!bgOverlay) {
+        bgOverlay = document.createElement('div');
+        bgOverlay.id = 'background-overlay';
+        bgOverlay.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 0;
+          pointer-events: none;
+          background-repeat: no-repeat;
+        `;
+        document.body.insertBefore(bgOverlay, document.body.firstChild);
+
+        // Make sure container has higher z-index
+        const container = document.querySelector('.container');
+        if (container && !container.style.position) {
+          container.style.position = 'relative';
+          container.style.zIndex = '1';
+        }
+
+        // Make sure status bar has higher z-index
+        const statusBar = document.getElementById('scanStatusBar');
+        if (statusBar) {
+          statusBar.style.position = 'relative';
+          statusBar.style.zIndex = '2';
+        }
+      }
+      bgOverlay.style.backgroundImage = `url(${imageData})`;
+      bgOverlay.style.opacity = opacity / 100;
+      bgOverlay.style.filter = `blur(${blur}px)`;
+      bgOverlay.style.backgroundSize = size || 'cover';
+      bgOverlay.style.backgroundPosition = `${positionX || 50}% ${positionY || 50}%`;
+
+      // Apply scale by using transform
+      // Keep transform origin at center to avoid conflicts with background-position
+      if (scale && scale != 100) {
+        const scalePercent = scale / 100;
+        bgOverlay.style.transform = `scale(${scalePercent})`;
+        bgOverlay.style.transformOrigin = 'center center';
+      } else {
+        bgOverlay.style.transform = 'none';
+        bgOverlay.style.transformOrigin = 'center center';
+      }
+    } else {
+      // Remove background overlay
+      const bgOverlay = document.getElementById('background-overlay');
+      if (bgOverlay) {
+        bgOverlay.remove();
+      }
+    }
+  }
+
+  function loadSavedBackgroundImage() {
+    const savedImage = localStorage.getItem('backgroundImage');
+    const savedOpacity = localStorage.getItem('backgroundOpacity');
+    const savedBlur = localStorage.getItem('backgroundBlur');
+    const savedSize = localStorage.getItem('backgroundSize');
+    const savedPositionX = localStorage.getItem('backgroundPositionX');
+    const savedPositionY = localStorage.getItem('backgroundPositionY');
+    const savedScale = localStorage.getItem('backgroundScale');
+
+    if (savedOpacity) {
+      backgroundOpacitySlider.value = savedOpacity;
+      opacityValue.textContent = `${savedOpacity}%`;
+    }
+    if (savedBlur) {
+      backgroundBlurSlider.value = savedBlur;
+      blurValue.textContent = `${savedBlur}px`;
+    }
+    if (savedSize) {
+      backgroundSizeSelect.value = savedSize;
+    }
+    if (savedScale) {
+      backgroundScaleSlider.value = savedScale;
+      scaleValue.textContent = `${savedScale}%`;
+    }
+
+    if (savedImage) {
+      applyBackgroundImage(
+        savedImage,
+        savedOpacity || 100,
+        savedBlur || 0,
+        savedSize || 'contain',
+        savedPositionX || 50,
+        savedPositionY || 50,
+        savedScale || 200
+      );
+    }
+  }
+
+  // Choose background image button
+  chooseBackgroundImageBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    backgroundImagePicker.click();
+  });
+
+  // Handle file selection
+  backgroundImagePicker.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const imageData = event.target.result;
+        localStorage.setItem('backgroundImage', imageData);
+        const positionX = localStorage.getItem('backgroundPositionX') || 50;
+        const positionY = localStorage.getItem('backgroundPositionY') || 50;
+        applyBackgroundImage(
+          imageData,
+          backgroundOpacitySlider.value,
+          backgroundBlurSlider.value,
+          backgroundSizeSelect.value,
+          positionX,
+          positionY,
+          backgroundScaleSlider.value
+        );
+      };
+      reader.readAsDataURL(file);
+    }
+  });
+
+  // Remove background image
+  removeBackgroundImageBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    localStorage.removeItem('backgroundImage');
+    applyBackgroundImage(null);
+    backgroundImagePicker.value = '';
+  });
+
+  // Opacity slider
+  backgroundOpacitySlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    opacityValue.textContent = `${value}%`;
+    localStorage.setItem('backgroundOpacity', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
+      applyBackgroundImage(
+        savedImage,
+        value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        positionX,
+        positionY,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Blur slider
+  backgroundBlurSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    blurValue.textContent = `${value}px`;
+    localStorage.setItem('backgroundBlur', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        value,
+        backgroundSizeSelect.value,
+        positionX,
+        positionY,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Size selector
+  backgroundSizeSelect.addEventListener('change', (e) => {
+    const value = e.target.value;
+    localStorage.setItem('backgroundSize', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        value,
+        positionX,
+        positionY,
+        backgroundScaleSlider.value
+      );
+    }
+  });
+
+  // Scale slider
+  backgroundScaleSlider.addEventListener('input', (e) => {
+    const value = e.target.value;
+    scaleValue.textContent = `${value}%`;
+    localStorage.setItem('backgroundScale', value);
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (savedImage) {
+      const positionX = localStorage.getItem('backgroundPositionX') || 50;
+      const positionY = localStorage.getItem('backgroundPositionY') || 50;
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        positionX,
+        positionY,
+        value
+      );
+    }
+  });
+
+  // Drag to reposition functionality
+  let isDragging = false;
+
+  repositionBackgroundBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const savedImage = localStorage.getItem('backgroundImage');
+    if (!savedImage) {
+      return;
+    }
+
+    const bgOverlay = document.getElementById('background-overlay');
+    if (!bgOverlay) return;
+
+    // Reload current position from localStorage when entering drag mode
+    let currentPosX = parseFloat(localStorage.getItem('backgroundPositionX')) || 50;
+    let currentPosY = parseFloat(localStorage.getItem('backgroundPositionY')) || 50;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    // Show the drag mode overlay and close all menus
+    dragModeOverlay.style.display = 'flex';
+    closeAllMenus();
+
+    // Enable dragging - raise z-index above everything (10001)
+    bgOverlay.style.cursor = 'move';
+    bgOverlay.style.pointerEvents = 'auto';
+    bgOverlay.style.zIndex = '10001';
+
+    // Also raise banner to stay on top of overlay
+    dragModeOverlay.style.zIndex = '10002';
+
+    const handleMouseDown = (event) => {
+      // Don't start dragging if clicking on the exit button
+      if (event.target === closeDragModeBtn || closeDragModeBtn.contains(event.target)) {
+        return;
+      }
+
+      isDragging = true;
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const handleMouseMove = (event) => {
+      if (!isDragging) return;
+
+      const deltaX = event.clientX - dragStartX;
+      const deltaY = event.clientY - dragStartY;
+
+      // Convert pixel movement to percentage based on window size
+      const percentX = (deltaX / window.innerWidth) * 100;
+      const percentY = (deltaY / window.innerHeight) * 100;
+
+      // Update positions with stricter limits (-50% to 150%)
+      currentPosX = Math.max(-50, Math.min(150, currentPosX + percentX));
+      currentPosY = Math.max(-50, Math.min(150, currentPosY + percentY));
+
+      dragStartX = event.clientX;
+      dragStartY = event.clientY;
+
+      console.log('Drag move:', { deltaX, deltaY, percentX, percentY, currentPosX, currentPosY });
+
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        currentPosX,
+        currentPosY,
+        backgroundScaleSlider.value
+      );
+    };
+
+    const handleMouseUp = () => {
+      if (isDragging) {
+        isDragging = false;
+        localStorage.setItem('backgroundPositionX', currentPosX);
+        localStorage.setItem('backgroundPositionY', currentPosY);
+      }
+    };
+
+    const handleWheel = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      // Get current scale from slider
+      let currentScale = parseFloat(backgroundScaleSlider.value);
+
+      // Adjust scale based on scroll direction
+      // Scroll down (deltaY > 0) = zoom out, Scroll up (deltaY < 0) = zoom in
+      const scaleChange = event.deltaY > 0 ? -5 : 5;
+      currentScale = Math.max(10, Math.min(1000, currentScale + scaleChange));
+
+      // Update slider and display
+      backgroundScaleSlider.value = currentScale;
+      scaleValue.textContent = `${currentScale}%`;
+
+      // Save to localStorage
+      localStorage.setItem('backgroundScale', currentScale);
+
+      // Apply the new scale
+      applyBackgroundImage(
+        savedImage,
+        backgroundOpacitySlider.value,
+        backgroundBlurSlider.value,
+        backgroundSizeSelect.value,
+        currentPosX,
+        currentPosY,
+        currentScale
+      );
+    };
+
+    const stopDragging = () => {
+      isDragging = false;
+      bgOverlay.style.cursor = 'default';
+      bgOverlay.style.pointerEvents = 'none';
+      bgOverlay.style.zIndex = '0';
+
+      // Hide the banner and restore its z-index
+      dragModeOverlay.style.display = 'none';
+      dragModeOverlay.style.zIndex = '100';
+
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('wheel', handleWheel);
+      closeDragModeBtn.removeEventListener('click', stopDragging);
+
+      // Save final position
+      localStorage.setItem('backgroundPositionX', currentPosX);
+      localStorage.setItem('backgroundPositionY', currentPosY);
+    };
+
+    // Listen on document instead of bgOverlay to bypass any blocking elements
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Set up banner close handler
+    closeDragModeBtn.addEventListener('click', stopDragging);
+  });
+
+  // Load saved background image on page load
+  loadSavedBackgroundImage();
 
   // Rescan all bookmarks
   rescanAllBtn.addEventListener('click', async () => {
@@ -4621,14 +5532,24 @@ function setupEventListeners() {
 
   // Close menus when clicking outside
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.bookmark-actions') &&
-        !e.target.closest('.bookmark-menu-btn') &&
-        !e.target.closest('.bookmark-preview-container') &&
-        !e.target.closest('.settings-menu') &&
-        !e.target.closest('#settingsBtn') &&
-        !e.target.closest('.theme-btn-wrapper') &&
-        !e.target.closest('.view-btn-wrapper') &&
-        !e.target.closest('.zoom-btn-wrapper')) {
+    // Check if click is inside any menu or menu button
+    const clickedInsideMenu = e.target.closest('.bookmark-actions') ||
+                              e.target.closest('#settingsMenu') ||
+                              e.target.closest('#themeMenu') ||
+                              e.target.closest('#viewMenu') ||
+                              e.target.closest('#zoomMenu');
+
+    const clickedMenuButton = e.target.closest('.bookmark-menu-btn') ||
+                              e.target.closest('.folder-menu-btn') ||
+                              e.target.closest('#settingsBtn') ||
+                              e.target.closest('#themeBtn') ||
+                              e.target.closest('#viewBtn') ||
+                              e.target.closest('#zoomBtn');
+
+    const clickedPreview = e.target.closest('.bookmark-preview-container');
+
+    // Close menus if clicking outside of menus, menu buttons, or previews
+    if (!clickedInsideMenu && !clickedMenuButton && !clickedPreview) {
       closeAllMenus();
     }
 
