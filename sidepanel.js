@@ -4783,7 +4783,7 @@ function setupEventListeners() {
     closeAllMenus();
     if (!wasOpen) {
       themeMenu.classList.add('show');
-      adjustDropdownPosition(themeMenu);
+      positionFixedDropdown(themeMenu, themeBtn);
     }
   });
 
@@ -4803,7 +4803,7 @@ function setupEventListeners() {
     closeAllMenus();
     if (!wasOpen) {
       viewMenu.classList.add('show');
-      adjustDropdownPosition(viewMenu);
+      positionFixedDropdown(viewMenu, viewBtn);
     }
   });
 
@@ -4823,7 +4823,7 @@ function setupEventListeners() {
     closeAllMenus();
     if (!wasOpen) {
       zoomMenu.classList.add('show');
-      adjustDropdownPosition(zoomMenu);
+      positionFixedDropdown(zoomMenu, zoomBtn);
     }
   });
 
