@@ -378,7 +378,7 @@
       z-index: 1;
     }
 
-    .bookmark-item::before {
+    .bookmark-item:not(.drop-before):not(.drop-after)::before {
       content: '';
       position: absolute;
       top: 0;
@@ -392,7 +392,7 @@
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    .bookmark-item:hover::before {
+    .bookmark-item:not(.drop-before):not(.drop-after):hover::before {
       background: var(--md-sys-color-surface-container-high);
     }
 
