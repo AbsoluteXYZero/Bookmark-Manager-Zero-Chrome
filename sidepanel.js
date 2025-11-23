@@ -2877,9 +2877,12 @@ function positionFixedDropdown(dropdown, button) {
       // Show above button instead
       top = buttonRect.top - menuHeight - 4;
       if (top < 16) {
-        // Not enough space above either, position at top with scrolling
-        top = 16;
-        dropdown.style.maxHeight = `${viewportHeight - 32}px`;
+        // Not enough space above either, position below button with scrolling
+        // Ensure button remains visible and clickable
+        top = buttonRect.bottom + 4;
+        const availableHeight = viewportHeight - top - 16;
+        dropdown.style.maxHeight = `${Math.max(availableHeight, 150)}px`;
+        dropdown.style.overflowY = 'auto';
       }
     }
 
