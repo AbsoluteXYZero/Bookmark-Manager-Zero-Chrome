@@ -30,6 +30,7 @@
       --md-elevation-2: 0 4px 6px -1px rgb(0 0 0 / 0.1);
       --md-elevation-3: 0 10px 15px -3px rgb(0 0 0 / 0.1);
       --bookmark-container-opacity: 1;
+      --custom-text-color: #ffffff;
     }
 
     /* Blue Dark Theme (Default) */
@@ -672,7 +673,7 @@
     .bookmark-title {
       font-weight: 500;
       font-size: 13px;
-      color: var(--md-sys-color-on-surface);
+      color: var(--custom-text-color);
       line-height: 1.4;
       margin-bottom: 4px;
       white-space: nowrap;
@@ -978,7 +979,7 @@
     .folder-title {
       flex: 1;
       font-weight: 500;
-      color: var(--md-sys-color-on-surface);
+      color: var(--custom-text-color);
       font-size: 13px;
     }
 
@@ -2109,51 +2110,6 @@
             </button>
             <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
             <div style="display: flex; flex-direction: column;">
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span class="icon">
-                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,15.31L23.31,12L20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31Z"/>
-                    </svg>
-                  </span>
-                  <span style="font-size: 11px;">Bookmark Opacity</span>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <input type="range" id="containerOpacity" min="0" max="100" value="100" style="width: 80px;">
-                  <span id="containerOpacityValue" style="min-width: 35px; font-size: 11px;">100%</span>
-                </div>
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
-                <div style="display: flex; align-items: center; gap: 6px;">
-                  <span class="icon">
-                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18V6Z"/>
-                    </svg>
-                  </span>
-                  <span style="font-size: 11px;">Invert Text Color</span>
-                </div>
-                <label class="toggle-switch">
-                  <input type="checkbox" id="darkTextToggle">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-            <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
-            <div style="display: flex; flex-direction: column;">
-              <div style="padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span class="icon">
-                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M9.62,12L12,5.67L14.37,12M11,3L5.5,17H7.75L8.87,14H15.12L16.25,17H18.5L13,3H11Z"/>
-                    </svg>
-                  </span>
-                  <span style="font-size: 11px;">Text Color</span>
-                </div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                  <input type="color" id="textColorPicker" value="#ffffff" style="cursor: pointer; width: 32px; height: 24px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 0;">
-                  <button id="resetTextColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 10px; white-space: nowrap;">Reset</button>
-                </div>
-              </div>
               <label style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 8px 12px;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                   <span class="icon">
@@ -2165,9 +2121,25 @@
                 </div>
                 <div style="display: flex; gap: 6px; align-items: center;">
                   <input type="color" id="accentColorPicker" value="#6366f1" style="cursor: pointer; width: 32px; height: 24px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 0;">
+                  <button id="doneAccentColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); border: 1px solid var(--md-sys-color-primary); border-radius: 4px; font-size: 10px; white-space: nowrap;">Done</button>
                   <button id="resetAccentColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 10px; white-space: nowrap;">Reset</button>
                 </div>
               </label>
+              <div style="padding: 8px 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M9.62,12L12,5.67L14.37,12M11,3L5.5,17H7.75L8.87,14H15.12L16.25,17H18.5L13,3H11Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Text Color</span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
+                  <input type="color" id="textColorPicker" value="#ffffff" style="cursor: pointer; width: 32px; height: 24px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; padding: 0;">
+                  <button id="doneTextColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-primary); color: var(--md-sys-color-on-primary); border: 1px solid var(--md-sys-color-primary); border-radius: 4px; font-size: 10px; white-space: nowrap;">Done</button>
+                  <button id="resetTextColor" style="cursor: pointer; padding: 4px 8px; background: var(--md-sys-color-surface-variant); color: var(--md-sys-color-on-surface-variant); border: 1px solid var(--md-sys-color-outline); border-radius: 4px; font-size: 10px; white-space: nowrap;">Reset</button>
+                </div>
+              </div>
             </div>
             <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
             <div style="display: flex; flex-direction: column;">
@@ -2214,6 +2186,37 @@
                   <span>Scale</span>
                   <input type="range" id="backgroundScale" min="10" max="1000" value="200" style="width: 100px; cursor: pointer;">
                   <span id="scaleValue" style="min-width: 32px; text-align: right;">200%</span>
+                </label>
+              </div>
+            </div>
+            <div style="border-top: 1px solid var(--md-sys-color-outline-variant); margin: 6px 0;"></div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18M20,15.31L23.31,12L20,8.69V4H15.31L12,0.69L8.69,4H4V8.69L0.69,12L4,15.31V20H8.69L12,23.31L15.31,20H20V15.31Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Bookmark Opacity</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <input type="range" id="containerOpacity" min="0" max="100" value="100" style="width: 80px;">
+                  <span id="containerOpacityValue" style="min-width: 35px; font-size: 11px;">100%</span>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <span class="icon">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18V6Z"/>
+                    </svg>
+                  </span>
+                  <span style="font-size: 11px;">Invert Text Color</span>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="darkTextToggle">
+                  <span class="toggle-slider"></span>
                 </label>
               </div>
             </div>

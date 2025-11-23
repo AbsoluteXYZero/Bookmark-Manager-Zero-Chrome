@@ -455,11 +455,13 @@ const defaultFolderSelect = document.getElementById('defaultFolderSelect');
 const rescanAllBtn = document.getElementById('rescanAllBtn');
 const setApiKeyBtn = document.getElementById('setApiKeyBtn');
 const accentColorPicker = document.getElementById('accentColorPicker');
+const doneAccentColorBtn = document.getElementById('doneAccentColor');
 const resetAccentColorBtn = document.getElementById('resetAccentColor');
 const containerOpacity = document.getElementById('containerOpacity');
 const containerOpacityValue = document.getElementById('containerOpacityValue');
 const darkTextToggle = document.getElementById('darkTextToggle');
 const textColorPicker = document.getElementById('textColorPicker');
+const doneTextColorBtn = document.getElementById('doneTextColor');
 const resetTextColor = document.getElementById('resetTextColor');
 const backgroundImagePicker = document.getElementById('backgroundImagePicker');
 const chooseBackgroundImageBtn = document.getElementById('chooseBackgroundImage');
@@ -4913,11 +4915,14 @@ function setupEventListeners() {
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
   });
 
-  // Accent color picker
-  accentColorPicker.addEventListener('input', (e) => {
-    const color = e.target.value;
+  // Accent color picker - no longer applies on input, only when Done is clicked
+
+  // Done button for accent color
+  doneAccentColorBtn.addEventListener('click', () => {
+    const color = accentColorPicker.value;
     applyAccentColor(color);
     localStorage.setItem('customAccentColor', color);
+    closeAllMenus();
   });
 
   // Reset accent color
@@ -4996,11 +5001,14 @@ function setupEventListeners() {
     document.body.classList.add('dark-text-mode');
   }
 
-  // Text Color Picker
-  textColorPicker.addEventListener('input', (e) => {
-    const color = e.target.value;
+  // Text Color Picker - no longer applies on input, only when Done is clicked
+
+  // Done button for text color
+  doneTextColorBtn.addEventListener('click', () => {
+    const color = textColorPicker.value;
     applyCustomTextColor(color);
     localStorage.setItem('customTextColor', color);
+    closeAllMenus();
   });
 
   // Reset Text Color
@@ -5011,11 +5019,9 @@ function setupEventListeners() {
     localStorage.removeItem('customTextColor');
   });
 
-  // Apply custom text color
+  // Apply custom text color using CSS variable
   function applyCustomTextColor(color) {
-    document.querySelectorAll('.bookmark-title, .folder-title, .bookmark-url').forEach(item => {
-      item.style.color = color;
-    });
+    document.documentElement.style.setProperty('--custom-text-color', color);
   }
 
   // Load saved text color on startup
@@ -5026,6 +5032,7 @@ function setupEventListeners() {
       applyCustomTextColor(savedColor);
     } else {
       textColorPicker.value = '#ffffff';
+      applyCustomTextColor('#ffffff');
     }
   }
 
