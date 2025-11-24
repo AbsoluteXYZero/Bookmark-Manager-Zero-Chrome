@@ -10,6 +10,10 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
+<br>
+
+[![Available in the Chrome Web Store](https://storage.googleapis.com/web-dev-uploads/image/WlD8wC6g8khYWPJUsQceQkhXSlv1/tbyBjqi7Zu733AAKA5n4.png)](https://chromewebstore.google.com/detail/bookmark-manager-zero/jbpiddimkkdfhoellbiegdopfpilnclc)
+
 </div>
 
 ## Overview
@@ -139,7 +143,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 ## Installation
 
 ### From Chrome Web Store (Recommended)
-Coming soon - awaiting Chrome review
+Install directly from the [Chrome Web Store](https://chromewebstore.google.com/detail/bookmark-manager-zero/jbpiddimkkdfhoellbiegdopfpilnclc)
 
 ### Manual Installation (Developer Mode)
 1. Clone this repository:
