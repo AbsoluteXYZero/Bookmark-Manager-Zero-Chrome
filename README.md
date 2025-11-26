@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-2.1.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -401,10 +401,9 @@ Users can whitelist specific URLs to:
 - `storage` - Save preferences and cache locally
 - `tabs` - Open bookmarks in tabs
 - `sidePanel` - Display the side panel interface
-
-### Optional Permissions
-- `<all_urls>` - Check if bookmark links are still working
-  - Only sends HEAD requests (no content accessed)
+- `<all_urls>` - Check if bookmark links are still working and download malware blocklists
+  - Sends HEAD requests to check bookmark URLs (no content accessed)
+  - Downloads free public blocklists for malware protection
   - Can be fully disabled in settings
 
 ## Development
@@ -470,7 +469,21 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v2.0.0 (Current) - Enhanced Themes & Expanded Security
+### v2.1.0 (Current) - Permission Cleanup & Documentation
+
+**Permission Improvements:**
+- 🔒 **Removed Unnecessary Permissions** - Eliminated unused `webRequest` permission for better privacy
+- 📝 **Simplified Host Permissions** - Removed redundant URLhaus and OISD entries (covered by `<all_urls>`)
+- 🛡️ **Updated Documentation** - Clarified `<all_urls>` permission usage for link checking and blocklist downloads
+
+**What Changed:**
+- More accurate permissions documentation in README
+- Cleaner manifest with minimal required permissions
+- No functional changes - everything works exactly the same
+
+---
+
+### v2.0.0 - Enhanced Themes & Expanded Security
 
 **Security Enhancements:**
 - 🔒 **5 Additional Blocklist Sources** - Expanded from 3 to 8 total sources for comprehensive malware protection
