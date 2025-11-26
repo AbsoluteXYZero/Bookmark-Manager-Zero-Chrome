@@ -7,8 +7,7 @@
     "bookmarks",
     "storage",
     "tabs",
-    "sidePanel",
-    "webRequest"
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>",
