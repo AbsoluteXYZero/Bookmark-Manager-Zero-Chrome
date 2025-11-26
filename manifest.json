@@ -10,9 +10,7 @@
     "sidePanel"
   ],
   "host_permissions": [
-    "<all_urls>",
-    "https://urlhaus.abuse.ch/*",
-    "https://big.oisd.nl/*"
+    "<all_urls>"
   ],
   "action": {
     "default_title": "Bookmark Manager Zero",
