@@ -7,10 +7,13 @@
     "bookmarks",
     "storage",
     "tabs",
-    "sidePanel"
+    "sidePanel",
+    "webRequest"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    "https://urlhaus.abuse.ch/*",
+    "https://big.oisd.nl/*"
   ],
   "action": {
     "default_title": "Bookmark Manager Zero",

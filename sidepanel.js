@@ -392,6 +392,8 @@ let bookmarkTree = [];
 let searchTerm = '';
 let activeFilters = [];
 let expandedFolders = new Set();
+let folderScanTimestamps = {}; // Track when each folder was last scanned
+const FOLDER_SCAN_CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 let theme = 'blue-dark';
 let viewMode = 'list';
 let displayOptions = {
@@ -498,6 +500,73 @@ const undoButton = document.getElementById('undoButton');
 const undoCountdownEl = document.getElementById('undoCountdown');
 const undoDismiss = document.getElementById('undoDismiss');
 
+// Load folder scan timestamps from storage
+async function loadFolderScanTimestamps() {
+  if (isPreviewMode) return;
+
+  try {
+    const result = await chrome.storage.local.get('folderScanTimestamps');
+    if (result.folderScanTimestamps) {
+      folderScanTimestamps = result.folderScanTimestamps;
+      console.log(`[Folder Scan Cache] Loaded timestamps for ${Object.keys(folderScanTimestamps).length} folders`);
+    }
+  } catch (error) {
+    console.error('[Folder Scan Cache] Error loading timestamps:', error);
+  }
+}
+
+// Save folder scan timestamp for a folder
+async function saveFolderScanTimestamp(folderId) {
+  if (isPreviewMode) return;
+
+  try {
+    folderScanTimestamps[folderId] = Date.now();
+    await chrome.storage.local.set({ folderScanTimestamps });
+    console.log(`[Folder Scan Cache] Saved timestamp for folder ${folderId}`);
+  } catch (error) {
+    console.error('[Folder Scan Cache] Error saving timestamp:', error);
+  }
+}
+
+// Check if folder needs scanning (never scanned OR >7 days old)
+function shouldScanFolder(folderId) {
+  const lastScan = folderScanTimestamps[folderId];
+  if (!lastScan) return true; // Never scanned
+
+  const now = Date.now();
+  const elapsed = now - lastScan;
+  return elapsed > FOLDER_SCAN_CACHE_DURATION; // >7 days
+}
+
+// Setup listener for blocklist download progress messages from background script
+function setupBlocklistProgressListener() {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'blocklistProgress') {
+      // Update status bar with download progress
+      if (scanProgress && message.status === 'starting') {
+        scanProgress.textContent = 'Downloading blocklists...';
+        if (scanStatusBar) scanStatusBar.classList.add('scanning');
+      } else if (scanProgress && message.status === 'downloading') {
+        scanProgress.textContent = `Downloading blocklists... (${message.current}/${message.total})`;
+        if (scanStatusBar) scanStatusBar.classList.add('scanning');
+      }
+      console.log(`[Blocklist Progress] ${message.current}/${message.total}${message.sourceName ? ` - ${message.sourceName}` : ''}`);
+    } else if (message.type === 'blocklistComplete') {
+      // Clear status bar after completion
+      if (scanProgress) {
+        scanProgress.textContent = `Blocklists loaded: ${message.domains.toLocaleString()} domains`;
+        setTimeout(() => {
+          if (scanProgress && scanProgress.textContent.startsWith('Blocklists loaded:')) {
+            scanProgress.textContent = 'Ready';
+          }
+        }, 3000); // Show completion message for 3 seconds
+      }
+      if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+      console.log(`[Blocklist Complete] ${message.domains.toLocaleString()} unique domains from ${message.totalEntries.toLocaleString()} entries (${message.sources} sources)`);
+    }
+  });
+}
+
 // Initialize
 async function init() {
   // Force update logo title to bypass cache
@@ -527,11 +596,13 @@ async function init() {
   loadCheckingSettings();
   await loadWhitelist();
   await loadSafetyHistory();
+  await loadFolderScanTimestamps();
   await loadAutoClearSetting();
   await loadBookmarks();
   populateDefaultFolderSelect();
   await expandToDefaultFolder();
   setupEventListeners();
+  setupBlocklistProgressListener();
   renderBookmarks();
 
   // Automatically check bookmark statuses after initial render
@@ -581,6 +652,12 @@ function loadTheme() {
   safeStorage.get('theme').then(result => {
     theme = result.theme || 'blue-dark';
     applyTheme();
+
+    // Update dropdown to match loaded theme
+    const themeSelect = document.getElementById('themeSelect');
+    if (themeSelect) {
+      themeSelect.value = theme;
+    }
   });
 }
 
@@ -688,16 +765,95 @@ if (typeof window.folderChildrenObserver === 'undefined') {
 // Apply theme
 function applyTheme() {
   // Remove all theme classes
-  document.body.classList.remove('dark', 'light', 'blue-dark');
+  document.body.classList.remove('dark', 'light', 'blue-dark',
+    'blue-dark-liquid', 'light-liquid', 'dark-liquid',
+    'gray-liquid', 'tinted');
+
+  // CRITICAL FIX: Clear tint-related inline styles when switching away from tinted theme
+  if (theme !== 'tinted') {
+    // Remove inline style modifications from tinted theme
+    document.body.style.removeProperty('--md-sys-color-surface');
+    document.documentElement.style.removeProperty('--tint-hue');
+    document.documentElement.style.removeProperty('--tint-saturation');
+    document.documentElement.style.removeProperty('--header-background');
+    document.documentElement.style.removeProperty('--footer-background');
+  }
 
   // Add current theme class
   document.body.classList.add(theme);
+
+  // Update tint controls visibility
+  updateTintControlsVisibility();
+
+  // Load tint settings if tinted theme
+  if (theme === 'tinted') {
+    loadTintSettings();
+  }
 
   // Reapply custom accent color if one is saved
   const savedColor = localStorage.getItem('customAccentColor');
   if (savedColor) {
     applyCustomAccentColor(savedColor);
   }
+}
+
+// Update tint controls visibility
+function updateTintControlsVisibility() {
+  const tintControls = document.getElementById('tintControls');
+  if (tintControls) {
+    if (theme === 'tinted') {
+      tintControls.style.display = 'block';
+    } else {
+      tintControls.style.display = 'none';
+    }
+  }
+}
+
+// Apply tint settings
+function applyTintSettings(hue, saturation) {
+  if (theme !== 'tinted') return;
+
+  document.documentElement.style.setProperty('--tint-hue', hue);
+  document.documentElement.style.setProperty('--tint-saturation', `${saturation}%`);
+
+  // Calculate luminance-balanced background
+  const lightness = saturation > 50 ? 65 : 70;
+  const bgColor = `hsla(${hue}, ${saturation}%, ${lightness}%, 0.72)`;
+  document.body.style.setProperty('--md-sys-color-surface', bgColor);
+
+  // Update header and footer backgrounds
+  const headerFooterLightness = saturation > 50 ? 70 : 75;
+  const headerFooterColor = `hsla(${hue}, ${saturation}%, ${headerFooterLightness}%, 0.85)`;
+  document.documentElement.style.setProperty('--header-background', headerFooterColor);
+  document.documentElement.style.setProperty('--footer-background', headerFooterColor);
+
+  // Save to storage
+  if (!isPreviewMode) {
+    safeStorage.set({
+      tintHue: hue,
+      tintSaturation: saturation
+    });
+  }
+}
+
+// Load tint settings
+function loadTintSettings() {
+  safeStorage.get(['tintHue', 'tintSaturation']).then(result => {
+    const hue = result.tintHue || 220;
+    const saturation = result.tintSaturation || 30;
+
+    const hueInput = document.getElementById('tintHue');
+    const saturationInput = document.getElementById('tintSaturation');
+    const hueValue = document.getElementById('hueValue');
+    const saturationValue = document.getElementById('saturationValue');
+
+    if (hueInput) hueInput.value = hue;
+    if (saturationInput) saturationInput.value = saturation;
+    if (hueValue) hueValue.textContent = `${hue}°`;
+    if (saturationValue) saturationValue.textContent = `${saturation}%`;
+
+    applyTintSettings(hue, saturation);
+  });
 }
 
 // Set theme
@@ -984,6 +1140,94 @@ function updateTotalBookmarkCount() {
 
   countBookmarksRecursive(bookmarkTree);
   totalCount.textContent = count + ' bookmark' + (count !== 1 ? 's' : '');
+}
+
+// Scan ALL bookmarks regardless of folder expansion (used by rescan button)
+async function scanAllBookmarksForced() {
+  // Skip if both checking types are disabled
+  if (!linkCheckingEnabled && !safetyCheckingEnabled) {
+    return;
+  }
+
+  const bookmarksToCheck = [];
+
+  // Traverse tree to find ALL bookmarks regardless of folder state or check status
+  function traverseAll(nodes) {
+    nodes.forEach(node => {
+      // Check all bookmarks regardless of folder expansion or previous check status
+      if (node.url && !checkedBookmarks.has(node.id)) {
+        bookmarksToCheck.push(node);
+      }
+      // Always traverse children
+      if (node.children) {
+        traverseAll(node.children);
+      }
+    });
+  }
+
+  traverseAll(bookmarkTree);
+
+  if (bookmarksToCheck.length === 0) {
+    if (scanProgress) scanProgress.textContent = 'Ready';
+    return;
+  }
+
+  console.log(`Rescanning ALL ${bookmarksToCheck.length} bookmarks in batches...`);
+
+  // Mark these bookmarks as being checked
+  bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
+
+  // Show stop button, hide rescan button
+  const stopBtn = document.getElementById('stopScanBtn');
+  const rescanBtn = document.getElementById('rescanAllBtn');
+  if (stopBtn) stopBtn.style.display = 'flex';
+  if (rescanBtn) rescanBtn.style.display = 'none';
+
+  // Process bookmarks in batches
+  const BATCH_SIZE = 5;
+  const BATCH_DELAY = 300;
+
+  // Update status bar
+  const totalToScan = bookmarksToCheck.length;
+  let scannedCount = 0;
+  scanCancelled = false; // Reset the cancel flag
+  if (scanProgress) scanProgress.textContent = `Scanning: 0/${totalToScan}`;
+
+  for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
+    if (scanCancelled) {
+      console.log('Scan cancelled by user');
+      break;
+    }
+
+    const batch = bookmarksToCheck.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(node => checkBookmarkStatus(node.url)));
+
+    results.forEach((result, index) => {
+      const node = batch[index];
+      updateBookmarkInTree(node.id, {
+        linkStatus: result.linkStatus,
+        safetyStatus: result.safetyStatus,
+        safetySources: result.safetySources || []
+      });
+      updateBookmarkStatusInDOM(node.id, result.linkStatus, result.safetyStatus, result.safetySources, node.url);
+    });
+
+    scannedCount += results.length;
+    if (scanProgress) scanProgress.textContent = `Scanning: ${scannedCount}/${totalToScan}`;
+
+    if (i + BATCH_SIZE < bookmarksToCheck.length) {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
+    }
+  }
+
+  renderBookmarks();
+  if (scanProgress) scanProgress.textContent = scanCancelled ? 'Scan stopped' : 'Scan complete';
+
+  // Hide stop button, show rescan button
+  if (stopBtn) stopBtn.style.display = 'none';
+  if (rescanBtn) rescanBtn.style.display = 'flex';
+
+  console.log(`Finished rescanning ${bookmarksToCheck.length} bookmarks`);
 }
 
 // Automatically check bookmark statuses for unchecked bookmarks
@@ -1618,6 +1862,14 @@ function createFolderElement(folder) {
       <div class="folder-title">${escapeHtml(folderTitle)}</div>
       <button class="bookmark-menu-btn folder-menu-btn" aria-label="More actions for ${escapeHtml(folderTitle)} folder" aria-haspopup="true" aria-expanded="false">⋮</button>
       <div class="bookmark-actions">
+        <button class="action-btn" data-action="rescan-folder">
+          <span class="icon">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/>
+            </svg>
+          </span>
+          <span>Rescan Bookmarks in Folder</span>
+        </button>
         <button class="action-btn" data-action="add-bookmark">
           <span class="icon">
             <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
@@ -2371,8 +2623,19 @@ function toggleFolder(folderId, folderElement) {
     expandedFolders.delete(folderId);
   } else {
     expandedFolders.add(folderId);
-    // When expanding a folder, check its bookmarks
-    setTimeout(() => autoCheckBookmarkStatuses(), 100);
+    // When expanding a folder, check its bookmarks only if cache expired (>7 days) or never scanned
+    if (shouldScanFolder(folderId)) {
+      console.log(`[Folder Scan Cache] Folder ${folderId} needs scanning (cache expired or never scanned)`);
+      setTimeout(() => {
+        autoCheckBookmarkStatuses();
+        // Save timestamp after successful scan
+        saveFolderScanTimestamp(folderId);
+      }, 100);
+    } else {
+      const lastScan = folderScanTimestamps[folderId];
+      const daysAgo = Math.floor((Date.now() - lastScan) / (24 * 60 * 60 * 1000));
+      console.log(`[Folder Scan Cache] Folder ${folderId} already scanned ${daysAgo} day(s) ago, skipping`);
+    }
   }
 
   // Re-render to reflect changes
@@ -2580,6 +2843,10 @@ async function handleFolderAction(action, folder) {
         await deleteFolder(folder.id);
       }
       break;
+
+    case 'rescan-folder':
+      await rescanFolder(folder.id, folder.title);
+      break;
   }
 }
 
@@ -2705,6 +2972,173 @@ async function deleteFolder(id) {
   } catch (error) {
     console.error('Error deleting folder:', error);
     alert('Failed to delete folder');
+  }
+}
+
+// Rescan all bookmarks in a folder and its subfolders
+async function rescanFolder(folderId, folderTitle) {
+  try {
+    console.log(`[Folder Rescan] Starting rescan for folder: ${folderTitle} (${folderId})`);
+
+    // Get all bookmarks recursively from this folder
+    const bookmarks = [];
+    const collectBookmarks = async (nodeId) => {
+      const nodes = await chrome.bookmarks.getChildren(nodeId);
+      console.log(`[Folder Rescan] Scanning node ${nodeId}, found ${nodes.length} children`);
+      for (const node of nodes) {
+        console.log(`[Folder Rescan]   - Node ${node.id}: url=${!!node.url}, title="${node.title}", type=${node.type}, hasChildren=${!!node.children}`);
+        if (node.url) {
+          bookmarks.push(node);
+        } else if (!node.url) {
+          // If it doesn't have a URL, it's a folder - recurse into it
+          console.log(`[Folder Rescan]   - Recursing into folder ${node.id} ("${node.title}")`);
+          await collectBookmarks(node.id);
+        }
+      }
+    };
+
+    await collectBookmarks(folderId);
+
+    if (bookmarks.length === 0) {
+      alert(`Folder "${folderTitle}" has no bookmarks to scan.`);
+      return;
+    }
+
+    console.log(`[Folder Rescan] Found ${bookmarks.length} bookmark(s) in folder "${folderTitle}"`);
+
+    // Show confirmation
+    const confirmMessage = `Rescan ${bookmarks.length} bookmark(s) in "${folderTitle}" and its subfolders?\n\nThis will check link status and security for all bookmarks.`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    // Expand the rescanned folder and all its subfolders FIRST so icons can update live
+    const expandFolderTree = (nodeId) => {
+      expandedFolders.add(nodeId);
+      const node = findFolderById(nodeId, bookmarkTree);
+      if (node && node.children) {
+        node.children.forEach(child => {
+          if (child.type === 'folder' || child.children) {
+            expandFolderTree(child.id);
+          }
+        });
+      }
+    };
+    expandFolderTree(folderId);
+    renderBookmarks(); // Initial render with folders expanded
+
+    // Wait for DOM to update before starting scan
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Track statistics
+    let scanned = 0;
+    let unsafe = 0;
+    let warning = 0;
+    let dead = 0;
+
+    // Process bookmarks in batches to avoid overwhelming the background service
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < bookmarks.length; i += BATCH_SIZE) {
+      const batch = bookmarks.slice(i, i + BATCH_SIZE);
+
+      // Process each bookmark in the batch
+      const batchPromises = batch.map(async (bookmark) => {
+        try {
+          // Check safety status
+          const safetyResult = await chrome.runtime.sendMessage({
+            action: 'checkURLSafety',
+            url: bookmark.url
+          });
+
+          // Check link status
+          const linkResult = await chrome.runtime.sendMessage({
+            action: 'checkLinkStatus',
+            url: bookmark.url
+          });
+
+          // Update the bookmark tree with the results so they persist
+          updateBookmarkInTree(bookmark.id, {
+            linkStatus: linkResult?.status || 'unknown',
+            safetyStatus: safetyResult?.status || 'unknown',
+            safetySources: safetyResult?.sources || []
+          });
+
+          // Track statistics
+          if (safetyResult) {
+            if (safetyResult.status === 'unsafe') unsafe++;
+            if (safetyResult.status === 'warning') warning++;
+          }
+
+          if (linkResult) {
+            if (linkResult.status === 'dead' || linkResult.status === 'parked') dead++;
+          }
+
+          scanned++;
+        } catch (error) {
+          console.error(`[Folder Rescan] Error checking bookmark ${bookmark.id}:`, error);
+        }
+      });
+
+      // Wait for batch to complete
+      await Promise.all(batchPromises);
+
+      // Add delay between batches to avoid overwhelming background service
+      if (i + BATCH_SIZE < bookmarks.length) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Save the updated folder scan timestamp
+    saveFolderScanTimestamp(folderId);
+
+    // Mark all rescanned bookmarks as checked so they won't be auto-scanned again
+    bookmarks.forEach(bookmark => {
+      checkedBookmarks.add(bookmark.id);
+    });
+
+    // Debug: Log the tree data for all scanned bookmarks
+    console.log('[Folder Rescan] Tree data after scan:');
+    bookmarks.forEach(bookmark => {
+      const findBookmark = (nodes) => {
+        for (const node of nodes) {
+          if (node.id === bookmark.id) return node;
+          if (node.children) {
+            const found = findBookmark(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+      const bookmarkData = findBookmark(bookmarkTree);
+      console.log(`  [${bookmark.id}] ${bookmark.title}:`, {
+        linkStatus: bookmarkData?.linkStatus,
+        safetyStatus: bookmarkData?.safetyStatus,
+        hasData: !!bookmarkData
+      });
+    });
+
+    // Re-render everything to show updated icons
+    console.log('[Folder Rescan] Calling renderBookmarks()...');
+    renderBookmarks();
+    console.log('[Folder Rescan] renderBookmarks() completed');
+
+    // Show summary
+    const summary = [
+      `Rescan complete for "${folderTitle}"!`,
+      ``,
+      `📊 Scanned: ${scanned} bookmark(s)`,
+      `🛡️ Unsafe: ${unsafe}`,
+      `⚠️ Warnings: ${warning}`,
+      `🔗 Dead links: ${dead}`,
+      `✅ Safe: ${scanned - unsafe - warning}`
+    ].join('\n');
+
+    alert(summary);
+    console.log(`[Folder Rescan] Complete: ${scanned} scanned, ${unsafe} unsafe, ${warning} warnings, ${dead} dead`);
+
+  } catch (error) {
+    console.error('[Folder Rescan] Error:', error);
+    alert(`Failed to rescan folder: ${error.message}`);
   }
 }
 
@@ -4525,10 +4959,9 @@ async function rescanAllBookmarks() {
     resetBookmarkStatuses(bookmarkTree);
     renderBookmarks();
 
-
-    // Reset the cancel flag and start new scan
+    // Reset the cancel flag and start scanning ALL bookmarks
     scanCancelled = false;
-    await autoCheckBookmarkStatuses();
+    await scanAllBookmarksForced();
 
   } catch (error) {
     console.error('Error rescanning bookmarks:', error);
@@ -4793,13 +5226,33 @@ function setupEventListeners() {
   });
 
   // Theme selection
-  themeMenu.querySelectorAll('.action-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const selectedTheme = btn.dataset.theme;
-      setTheme(selectedTheme);
-      closeAllMenus();
+  // Theme dropdown
+  const themeSelect = document.getElementById('themeSelect');
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      setTheme(themeSelect.value);
     });
-  });
+  }
+
+  // Tint control event listeners
+  const tintHueInput = document.getElementById('tintHue');
+  const tintSaturationInput = document.getElementById('tintSaturation');
+  const hueValueSpan = document.getElementById('hueValue');
+  const saturationValueSpan = document.getElementById('saturationValue');
+
+  if (tintHueInput && tintSaturationInput) {
+    tintHueInput.addEventListener('input', (e) => {
+      const hue = e.target.value;
+      if (hueValueSpan) hueValueSpan.textContent = `${hue}°`;
+      applyTintSettings(parseInt(hue), parseInt(tintSaturationInput.value));
+    });
+
+    tintSaturationInput.addEventListener('input', (e) => {
+      const saturation = e.target.value;
+      if (saturationValueSpan) saturationValueSpan.textContent = `${saturation}%`;
+      applyTintSettings(parseInt(tintHueInput.value), parseInt(saturation));
+    });
+  }
 
   // View menu
   viewBtn.addEventListener('click', (e) => {
@@ -5423,6 +5876,15 @@ function setupEventListeners() {
     closeAllMenus();
   });
 
+  // Stop scan button
+  const stopScanBtn = document.getElementById('stopScanBtn');
+  if (stopScanBtn) {
+    stopScanBtn.addEventListener('click', () => {
+      scanCancelled = true;
+      console.log('User requested scan cancellation');
+    });
+  }
+
   // Set Google API Key
   setApiKeyBtn.addEventListener('click', async () => {
     const currentKey = await getDecryptedApiKey('googleSafeBrowsingApiKey');
@@ -5444,6 +5906,7 @@ function setupEventListeners() {
         await storeEncryptedApiKey('googleSafeBrowsingApiKey', apiKey.trim());
         alert('Google Safe Browsing API key saved securely!\n\nSafety checking will now use:\n1. URLhaus (primary)\n2. Google Safe Browsing (redundancy)');
       }
+      updateApiKeyButtonLabels();
     }
     closeAllMenus();
   });
@@ -5469,9 +5932,66 @@ function setupEventListeners() {
         await storeEncryptedApiKey('virusTotalApiKey', apiKey.trim());
         alert('VirusTotal API key saved securely!\n\nSafety checking will now include VirusTotal scans.');
       }
+      updateApiKeyButtonLabels();
     }
     closeAllMenus();
   });
+
+  // Set Yandex API Key
+  document.getElementById('setYandexApiKeyBtn').addEventListener('click', async () => {
+    const currentKey = await getDecryptedApiKey('yandexApiKey');
+    const hasKey = currentKey && currentKey.length > 0;
+
+    const promptMessage = hasKey
+      ? 'Yandex Safe Browsing API Key is currently set.\n\nEnter a new key to update, or leave blank to remove:'
+      : 'Enter your Yandex Safe Browsing API Key:\n\n(Register at: https://yandex.com/dev/)\nFree tier: 100,000 requests/day\n\nLeave blank to disable Yandex Safe Browsing.';
+
+    const apiKey = prompt(promptMessage, '');
+
+    if (apiKey !== null) { // User clicked OK (not Cancel)
+      if (apiKey.trim() === '') {
+        // Remove API key
+        await safeStorage.remove('yandexApiKey');
+        alert('Yandex Safe Browsing API key removed.\n\nYandex checking is now disabled.');
+      } else {
+        // Save encrypted API key
+        await storeEncryptedApiKey('yandexApiKey', apiKey.trim());
+        alert('Yandex Safe Browsing API key saved securely!\n\nSafety checking will now include Yandex Safe Browsing.');
+      }
+      updateApiKeyButtonLabels();
+    }
+    closeAllMenus();
+  });
+
+  // Function to update API key button labels
+  async function updateApiKeyButtonLabels() {
+    const googleKey = await getDecryptedApiKey('googleSafeBrowsingApiKey');
+    const vtKey = await getDecryptedApiKey('virusTotalApiKey');
+    const yandexKey = await getDecryptedApiKey('yandexApiKey');
+
+    const googleBtn = document.querySelector('#setApiKeyBtn span:last-child');
+    const vtBtn = document.querySelector('#setVirusTotalApiKeyBtn span:last-child');
+    const yandexBtn = document.querySelector('#setYandexApiKeyBtn span:last-child');
+
+    if (googleBtn) {
+      googleBtn.textContent = (googleKey && googleKey.length > 0)
+        ? 'Change/Remove Google API Key'
+        : 'Set Google API Key';
+    }
+    if (vtBtn) {
+      vtBtn.textContent = (vtKey && vtKey.length > 0)
+        ? 'Change/Remove VirusTotal API Key'
+        : 'Set VirusTotal API Key';
+    }
+    if (yandexBtn) {
+      yandexBtn.textContent = (yandexKey && yandexKey.length > 0)
+        ? 'Change/Remove Yandex API Key'
+        : 'Set Yandex API Key';
+    }
+  }
+
+  // Update button labels on load
+  updateApiKeyButtonLabels();
 
   // Help & Documentation
   const helpDocsBtn = document.getElementById('helpDocsBtn');
