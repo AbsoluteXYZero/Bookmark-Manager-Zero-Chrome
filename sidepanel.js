@@ -1009,7 +1009,12 @@ function setFontSize(newSize) {
 
 // Update font size display
 function updateFontSizeDisplay() {
-  if (fontSizeSlider) fontSizeSlider.value = fontSize;
+  if (fontSizeSlider) {
+    fontSizeSlider.value = fontSize;
+    // Update the slider track fill color
+    const progress = ((fontSize - 70) / (150 - 70)) * 100;
+    fontSizeSlider.style.setProperty('--zoom-progress', `${progress}%`);
+  }
   if (fontSizeValue) fontSizeValue.textContent = `${fontSize}%`;
 }
 
@@ -5334,6 +5339,7 @@ function setupEventListeners() {
   fontSizeSlider.addEventListener('input', (e) => {
     const newSize = parseInt(e.target.value);
     setFontSize(newSize);
+    updateSliderProgress(e.target, newSize, 70, 150);
   });
 
   // GUI scale select
