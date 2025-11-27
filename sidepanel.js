@@ -398,6 +398,7 @@ let displayOptions = {
 };
 let currentEditItem = null;
 let zoomLevel = 80;
+let fontSize = 100; // Font size for bookmark/folder text (70-150%)
 let guiScale = 100; // GUI scale for header/toolbar/menus
 let checkedBookmarks = new Set(); // Track which bookmarks have been checked to prevent infinite loops
 let scanCancelled = false; // Flag to cancel ongoing scans
@@ -438,6 +439,8 @@ const zoomBtn = document.getElementById('zoomBtn');
 const zoomMenu = document.getElementById('zoomMenu');
 const zoomSlider = document.getElementById('zoomSlider');
 const zoomValue = document.getElementById('zoomValue');
+const fontSizeSlider = document.getElementById('fontSizeSlider');
+const fontSizeValue = document.getElementById('fontSizeValue');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsMenu = document.getElementById('settingsMenu');
 const openInTabBtn = document.getElementById('openInTabBtn');
@@ -583,6 +586,7 @@ async function init() {
   loadTheme();
   loadView();
   loadZoom();
+  loadFontSize();
   loadGuiScale();
   loadCheckingSettings();
   await loadWhitelist();
@@ -985,6 +989,43 @@ function updateZoomDisplay() {
     zoomSlider.style.setProperty('--zoom-progress', `${progress}%`);
   }
   if (zoomValue) zoomValue.textContent = `${zoomLevel}%`;
+}
+
+// Apply font size
+function applyFontSize() {
+  const fontSizeFactor = fontSize / 100;
+  document.documentElement.style.setProperty('--font-size-scale', fontSizeFactor);
+}
+
+// Set font size
+function setFontSize(newSize) {
+  fontSize = newSize;
+  applyFontSize();
+  updateFontSizeDisplay();
+  if (!isPreviewMode) {
+    safeStorage.set({ fontSize });
+  }
+}
+
+// Update font size display
+function updateFontSizeDisplay() {
+  if (fontSizeSlider) fontSizeSlider.value = fontSize;
+  if (fontSizeValue) fontSizeValue.textContent = `${fontSize}%`;
+}
+
+// Load font size preference
+function loadFontSize() {
+  if (isPreviewMode) {
+    fontSize = 100;
+    applyFontSize();
+    return;
+  }
+
+  safeStorage.get('fontSize').then(result => {
+    fontSize = result.fontSize || 100;
+    applyFontSize();
+    updateFontSizeDisplay();
+  });
 }
 // Load bookmarks from Chrome API
 async function loadBookmarks() {
@@ -5287,6 +5328,12 @@ function setupEventListeners() {
     const newZoom = parseInt(e.target.value);
     setZoom(newZoom);
     updateSliderProgress(e.target, newZoom, 50, 200);
+  });
+
+  // Font size slider
+  fontSizeSlider.addEventListener('input', (e) => {
+    const newSize = parseInt(e.target.value);
+    setFontSize(newSize);
   });
 
   // GUI scale select
