@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-2.1.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -469,7 +469,22 @@ Contributions welcome! Please:
 
 ## Changelog
 
-### v2.1.0 (Current) - Permission Cleanup & Documentation
+### v2.2.0 (Current) - Font Size Control
+
+**New Feature:**
+- 🔤 **Independent Font Size Slider** - Adjust text size (70-150%) without affecting container sizes
+- 📐 **Content Zoom Renamed** - First slider clarified as "Content Zoom" for better understanding
+- 🎯 **Precise Text Control** - Scale bookmark titles, URLs, and folder names independently from layout
+
+**Implementation:**
+- New Font Size slider in zoom menu (between Content Zoom and GUI Scale)
+- Applies to all view modes (list and grid 2-6 columns)
+- Persistent preference storage
+- Works independently from content zoom
+
+---
+
+### v2.1.0 - Permission Cleanup & Documentation
 
 **Permission Improvements:**
 - 🔒 **Removed Unnecessary Permissions** - Eliminated unused `webRequest` permission for better privacy
