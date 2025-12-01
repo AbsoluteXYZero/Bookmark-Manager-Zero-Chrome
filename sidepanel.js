@@ -594,6 +594,7 @@ async function init() {
   await loadFolderScanTimestamps();
   await loadAutoClearSetting();
   await loadBookmarks();
+  await restoreCachedBookmarkStatuses();
   populateDefaultFolderSelect();
   await expandToDefaultFolder();
   setupEventListeners();
@@ -1086,6 +1087,55 @@ async function loadBookmarks() {
   } catch (error) {
     console.error('Error loading bookmarks:', error);
     showError('Failed to load bookmarks');
+  }
+}
+
+// Helper function to validate cache entries
+function isValidCache(cached) {
+  const CACHE_TTL = 7 * 24 * 60 * 60 * 1000; // 7 days
+  return cached && (Date.now() - cached.timestamp < CACHE_TTL);
+}
+
+// Restore cached bookmark statuses from persistent storage
+async function restoreCachedBookmarkStatuses() {
+  try {
+    // Load both caches from storage
+    const result = await safeStorage.get(['linkStatusCache', 'safetyStatusCache']);
+    const linkCache = result.linkStatusCache || {};
+    const safetyCache = result.safetyStatusCache || {};
+
+    let restored = 0;
+
+    // Recursively traverse bookmark tree
+    function restoreStatuses(nodes) {
+      nodes.forEach(node => {
+        if (node.url) {
+          // Check link status cache
+          const linkCached = linkCache[node.url];
+          if (linkCached && isValidCache(linkCached)) {
+            node.linkStatus = linkCached.result;
+            restored++;
+          }
+
+          // Check safety status cache
+          const safetyCached = safetyCache[node.url];
+          if (safetyCached && isValidCache(safetyCached)) {
+            node.safetyStatus = safetyCached.result?.status || safetyCached.result;
+            node.safetySources = safetyCached.result?.sources || [];
+            restored++;
+          }
+        }
+
+        if (node.children) {
+          restoreStatuses(node.children);
+        }
+      });
+    }
+
+    restoreStatuses(bookmarkTree);
+    console.log(`[Cache Restore] Restored ${restored} cached status indicators`);
+  } catch (error) {
+    console.error('[Cache Restore] Error restoring cached statuses:', error);
   }
 }
 
@@ -1599,6 +1649,55 @@ function getMockBookmarks() {
       safetyStatus: 'unsafe'
     }
   ];
+}
+
+/**
+ * Open a URL using the most appropriate method based on the URL scheme.
+ * For privileged schemes (about:, chrome:, chrome-extension:, etc.), use anchor click.
+ * For regular HTTP(S) URLs, use browser tab APIs for better control.
+ */
+function openBookmarkUrl(url, openInNewTab = false) {
+  try {
+    const urlObj = new URL(url);
+    const scheme = urlObj.protocol.replace(':', '').toLowerCase();
+
+    // List of privileged schemes that can't be opened via tab APIs
+    const privilegedSchemes = ['about', 'chrome', 'chrome-extension', 'view-source', 'jar', 'resource'];
+
+    if (privilegedSchemes.includes(scheme)) {
+      // Use anchor click for privileged URLs
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = openInNewTab ? '_blank' : '_self';
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      // Use browser APIs for regular URLs (better control)
+      if (openInNewTab) {
+        chrome.tabs.create({ url: url });
+      } else {
+        chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+          if (tabs[0]) {
+            chrome.tabs.update(tabs[0].id, { url: url });
+          } else {
+            chrome.tabs.create({ url: url });
+          }
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Failed to open URL:', url, error);
+    // Fallback: try anchor click anyway
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = openInNewTab ? '_blank' : '_self';
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 }
 
 // Render bookmarks
@@ -2222,15 +2321,9 @@ function createBookmarkElement(bookmark) {
     }
     // Open in active tab
     if (isPreviewMode) {
-      window.open(bookmark.url, '_blank');
+      openBookmarkUrl(bookmark.url, true);
     } else {
-      chrome.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-        if (tabs[0]) {
-          chrome.tabs.update(tabs[0].id, { url: bookmark.url });
-        } else {
-          chrome.tabs.create({ url: bookmark.url });
-        }
-      });
+      openBookmarkUrl(bookmark.url, false);
     }
   });
 
@@ -3081,16 +3174,18 @@ async function rescanFolder(folderId, folderTitle) {
       // Process each bookmark in the batch
       const batchPromises = batch.map(async (bookmark) => {
         try {
-          // Check safety status
+          // Check safety status (bypass cache for folder rescan)
           const safetyResult = await chrome.runtime.sendMessage({
             action: 'checkURLSafety',
-            url: bookmark.url
+            url: bookmark.url,
+            bypassCache: true
           });
 
-          // Check link status
+          // Check link status (bypass cache for folder rescan)
           const linkResult = await chrome.runtime.sendMessage({
             action: 'checkLinkStatus',
-            url: bookmark.url
+            url: bookmark.url,
+            bypassCache: true
           });
 
           // Update the bookmark tree with the results so they persist
@@ -3442,7 +3537,7 @@ function closeAllMenus() {
 }
 
 // Check link status using background script
-async function checkLinkStatus(url) {
+async function checkLinkStatus(url, bypassCache = false) {
   if (isPreviewMode) {
     // Simulate checking in preview mode
     return new Promise(resolve => {
@@ -3457,7 +3552,8 @@ async function checkLinkStatus(url) {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'checkLinkStatus',
-      url: url
+      url: url,
+      bypassCache: bypassCache
     });
     return response.status || 'unknown';
   } catch (error) {
@@ -3469,7 +3565,7 @@ async function checkLinkStatus(url) {
 // Check URL safety with heuristic-based security check
 // Uses pattern matching and domain reputation checks
 // Checks for: HTTPS, suspicious patterns, URL shorteners, known safe domains
-async function checkSafetyStatus(url) {
+async function checkSafetyStatus(url, bypassCache = false) {
   // Check if URL is whitelisted
   try {
     const hostname = new URL(url).hostname;
@@ -3496,7 +3592,8 @@ async function checkSafetyStatus(url) {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'checkURLSafety',
-      url: url
+      url: url,
+      bypassCache: bypassCache
     });
     const result = {
       status: response.status || 'unknown',
@@ -3539,11 +3636,11 @@ async function recheckBookmarkStatus(bookmarkId) {
   const results = {};
 
   if (linkCheckingEnabled) {
-    results.linkStatus = await checkLinkStatus(bookmark.url);
+    results.linkStatus = await checkLinkStatus(bookmark.url, true); // Bypass cache for rescan
   }
 
   if (safetyCheckingEnabled) {
-    const safetyStatusResult = await checkSafetyStatus(bookmark.url);
+    const safetyStatusResult = await checkSafetyStatus(bookmark.url, true); // Bypass cache for rescan
     results.safetyStatus = safetyStatusResult.status;
     results.safetySources = safetyStatusResult.sources;
   }
@@ -3716,11 +3813,7 @@ async function handleBookmarkAction(action, bookmark) {
       break;
 
     case 'open-new-tab':
-      if (isPreviewMode) {
-        window.open(bookmark.url, '_blank');
-      } else {
-        chrome.tabs.create({ url: bookmark.url });
-      }
+      openBookmarkUrl(bookmark.url, true);
       break;
 
     case 'open-new-window':
