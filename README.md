@@ -276,6 +276,19 @@ Bookmarks are scanned in batches of 5 with a 1-second delay between batches. Thi
 #### Caching
 Results are cached locally for 7 days to minimize network requests.
 
+#### Privileged URLs (Browser Internal Pages)
+
+Certain URL schemes are recognized as browser internal pages and are automatically marked as trusted without scanning:
+
+- `chrome:*` - Chrome internal pages (e.g., `chrome://extensions`, `chrome://settings`)
+- `chrome-extension:*` - Extension pages
+
+**Visual Indicators:**
+- **Green chain-link icon** with tooltip: "Link Status: Browser internal page"
+- **Green shield icon** with tooltip: "Not scanned (trusted browser page)"
+
+These URLs are inherently safe and don't require HTTP status checks or security scanning. Note that `about:*` URLs work normally in Chrome and are scanned like regular URLs.
+
 ---
 
 ### Safety Checking
