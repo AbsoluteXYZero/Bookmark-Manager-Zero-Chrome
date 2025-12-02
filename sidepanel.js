@@ -2579,7 +2579,18 @@ function showPreviewPopup(previewImage, mouseEvent) {
 
   const popup = createPreviewPopup();
   const popupImg = popup.querySelector('img');
-  popupImg.src = previewImage.src;
+
+  // Get the bookmark URL from the preview image's data attribute
+  const bookmarkUrl = previewImage.dataset.url;
+
+  // Load high-quality preview (800x600 instead of 320x180)
+  try {
+    const encodedUrl = encodeURIComponent(bookmarkUrl);
+    popupImg.src = `https://s.wordpress.com/mshots/v1/${encodedUrl}?w=800&h=600`;
+  } catch (error) {
+    console.error('Error loading high-quality preview:', error);
+    popupImg.src = previewImage.src; // Fallback to low-res
+  }
 
   // Position the popup with smart positioning
   const sidebar = document.body;
@@ -2587,10 +2598,13 @@ function showPreviewPopup(previewImage, mouseEvent) {
   const header = document.querySelector('.header');
   const statusBar = document.querySelector('.scan-status-bar');
 
+  // Get the bookmark element that contains the preview image
+  const bookmarkElement = previewImage.closest('.bookmark-item, .folder-item');
+  const bookmarkRect = bookmarkElement ? bookmarkElement.getBoundingClientRect() : null;
+
   // Calculate available space
   const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
   const statusBarTop = statusBar ? statusBar.getBoundingClientRect().top : sidebarRect.bottom;
-  const availableHeight = statusBarTop - headerBottom - 40; // 40px margin
 
   // Set max width to 90% of sidebar minus margins
   const maxWidth = sidebarRect.width * 0.9;
@@ -2612,14 +2626,36 @@ function showPreviewPopup(previewImage, mouseEvent) {
     // Center horizontally in sidebar
     const left = sidebarRect.left + (sidebarRect.width - popupRect.width) / 2;
 
-    // Position vertically - try to center on mouse, but keep within bounds
-    let top = mouseEvent.clientY - popupRect.height / 2;
+    // Position vertically - above or below bookmark to avoid covering it
+    let top;
+    if (bookmarkRect) {
+      // Calculate space above and below the bookmark
+      const spaceAbove = bookmarkRect.top - headerBottom - 20;
+      const spaceBelow = statusBarTop - bookmarkRect.bottom - 20;
 
-    // Keep within header and status bar bounds
-    const minTop = headerBottom + 20;
-    const maxTop = statusBarTop - popupRect.height - 20;
-
-    top = Math.max(minTop, Math.min(top, maxTop));
+      // Try to position below first, then above if not enough space
+      if (spaceBelow >= popupRect.height) {
+        // Position below bookmark
+        top = bookmarkRect.bottom + 10;
+      } else if (spaceAbove >= popupRect.height) {
+        // Position above bookmark
+        top = bookmarkRect.top - popupRect.height - 10;
+      } else {
+        // Not enough space either way, use the side with more space
+        if (spaceBelow > spaceAbove) {
+          top = bookmarkRect.bottom + 10;
+          // Might extend past status bar, but that's okay
+        } else {
+          top = Math.max(headerBottom + 20, bookmarkRect.top - popupRect.height - 10);
+        }
+      }
+    } else {
+      // Fallback: center on mouse position
+      top = mouseEvent.clientY - popupRect.height / 2;
+      const minTop = headerBottom + 20;
+      const maxTop = statusBarTop - popupRect.height - 20;
+      top = Math.max(minTop, Math.min(top, maxTop));
+    }
 
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
