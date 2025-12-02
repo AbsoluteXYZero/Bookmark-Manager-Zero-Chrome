@@ -1185,9 +1185,38 @@
       left: 0;
       opacity: 0;
       transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      pointer-events: none;
+      pointer-events: auto;
+      cursor: pointer;
       user-select: none;
       -webkit-user-drag: none;
+    }
+
+    /* Large preview popup */
+    .preview-popup {
+      position: fixed;
+      z-index: 10000;
+      background: var(--md-sys-color-surface);
+      border: 1px solid var(--md-sys-color-outline);
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      padding: 8px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      max-width: 90%;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .preview-popup.show {
+      opacity: 1;
+    }
+
+    .preview-popup img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
     }
 
     .bookmark-preview-container .preview-image.loaded {
@@ -2731,6 +2760,10 @@
     <label class="display-toggle" title="Show/hide webpage preview">
       <input type="checkbox" id="displayPreview" checked>
       <span>Preview</span>
+    </label>
+    <label class="display-toggle" title="Show/hide preview popup on hover">
+      <input type="checkbox" id="displayPreviewPopup" checked>
+      <span>Preview Popup</span>
     </label>
   </div>
 

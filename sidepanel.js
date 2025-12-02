@@ -2256,10 +2256,10 @@ function createBookmarkElement(bookmark) {
   // Build bookmark info HTML based on display options
   let bookmarkInfoHtml = '';
   if (displayOptions.title) {
-    bookmarkInfoHtml += `<div class="bookmark-title">${escapeHtml(bookmark.title || bookmark.url)}</div>`;
+    bookmarkInfoHtml += `<div class="bookmark-title" title="${escapeHtml(bookmark.url)}">${escapeHtml(bookmark.title || bookmark.url)}</div>`;
   }
   if (displayOptions.url) {
-    bookmarkInfoHtml += `<div class="bookmark-url">${escapeHtml(new URL(bookmark.url).hostname)}</div>`;
+    bookmarkInfoHtml += `<div class="bookmark-url" title="${escapeHtml(bookmark.url)}">${escapeHtml(new URL(bookmark.url).hostname)}</div>`;
   }
 
   const bookmarkTitle = bookmark.title || bookmark.url;
@@ -2504,6 +2504,15 @@ function createBookmarkElement(bookmark) {
       e.preventDefault();
     });
 
+    // Preview popup on hover
+    previewImage.addEventListener('mouseenter', (e) => {
+      showPreviewPopup(previewImage, e);
+    });
+
+    previewImage.addEventListener('mouseleave', () => {
+      hidePreviewPopup();
+    });
+
     bookmarkDiv.addEventListener('mouseenter', () => {
       if (!loadedPreviews.has(previewKey) && bookmark.url) {
         const previewUrl = getPreviewUrl(bookmark.url);
@@ -2546,6 +2555,103 @@ function getPreviewUrl(url) {
     return '';
   }
 }
+
+// Preview popup handling
+let previewPopup = null;
+let previewPopupEnabled = true; // Will be loaded from settings
+
+// Create preview popup element
+function createPreviewPopup() {
+  if (!previewPopup) {
+    previewPopup = document.createElement('div');
+    previewPopup.className = 'preview-popup';
+    previewPopup.innerHTML = '<img alt="Preview" />';
+    document.body.appendChild(previewPopup);
+  }
+  return previewPopup;
+}
+
+// Show preview popup
+function showPreviewPopup(previewImage, mouseEvent) {
+  if (!previewPopupEnabled || !previewImage.classList.contains('loaded')) {
+    return;
+  }
+
+  const popup = createPreviewPopup();
+  const popupImg = popup.querySelector('img');
+  popupImg.src = previewImage.src;
+
+  // Position the popup with smart positioning
+  const sidebar = document.body;
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const header = document.querySelector('.header');
+  const statusBar = document.querySelector('.scan-status-bar');
+
+  // Calculate available space
+  const headerBottom = header ? header.getBoundingClientRect().bottom : 0;
+  const statusBarTop = statusBar ? statusBar.getBoundingClientRect().top : sidebarRect.bottom;
+  const availableHeight = statusBarTop - headerBottom - 40; // 40px margin
+
+  // Set max width to 90% of sidebar minus margins
+  const maxWidth = sidebarRect.width * 0.9;
+  popup.style.maxWidth = `${maxWidth}px`;
+
+  // Show popup to calculate dimensions
+  popup.classList.add('show');
+
+  // Wait for image to load dimensions
+  if (popupImg.complete) {
+    positionPopup();
+  } else {
+    popupImg.onload = positionPopup;
+  }
+
+  function positionPopup() {
+    const popupRect = popup.getBoundingClientRect();
+
+    // Center horizontally in sidebar
+    const left = sidebarRect.left + (sidebarRect.width - popupRect.width) / 2;
+
+    // Position vertically - try to center on mouse, but keep within bounds
+    let top = mouseEvent.clientY - popupRect.height / 2;
+
+    // Keep within header and status bar bounds
+    const minTop = headerBottom + 20;
+    const maxTop = statusBarTop - popupRect.height - 20;
+
+    top = Math.max(minTop, Math.min(top, maxTop));
+
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+  }
+}
+
+// Hide preview popup
+function hidePreviewPopup() {
+  if (previewPopup) {
+    previewPopup.classList.remove('show');
+  }
+}
+
+// Load preview popup setting
+async function loadPreviewPopupSetting() {
+  try {
+    const result = await chrome.storage.local.get(['previewPopupEnabled']);
+    if (result.previewPopupEnabled !== undefined) {
+      previewPopupEnabled = result.previewPopupEnabled;
+      // Update checkbox state
+      const checkbox = document.getElementById('displayPreviewPopup');
+      if (checkbox) {
+        checkbox.checked = previewPopupEnabled;
+      }
+    }
+  } catch (error) {
+    console.error('Error loading preview popup setting:', error);
+  }
+}
+
+// Initialize preview popup setting
+loadPreviewPopupSetting();
 
 // Drag and drop helper functions
 function handleDragOver(e, targetElement) {
@@ -5393,6 +5499,15 @@ function setupEventListeners() {
   displayPreview.addEventListener('change', (e) => {
     displayOptions.preview = e.target.checked;
     renderBookmarks();
+  });
+
+  const displayPreviewPopup = document.getElementById('displayPreviewPopup');
+  displayPreviewPopup.addEventListener('change', async (e) => {
+    previewPopupEnabled = e.target.checked;
+    await chrome.storage.local.set({ previewPopupEnabled: previewPopupEnabled });
+    if (!previewPopupEnabled) {
+      hidePreviewPopup();
+    }
   });
 
   // Filter chips
