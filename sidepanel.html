@@ -2240,6 +2240,14 @@
             </span>
             <span>Export Bookmarks (Backup)</span>
           </button>
+          <button class="action-btn" id="viewChangelogBtn">
+            <span class="icon">
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
+              </svg>
+            </span>
+            <span>View Bookmark Changelog</span>
+          </button>
           <div style="padding: 8px 16px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <span style="color: var(--md-sys-color-on-surface); font-weight: 500;">Cache Size:</span>
@@ -2936,6 +2944,26 @@
       <div class="modal-footer">
         <button class="btn" id="duplicatesModalCancel">Close</button>
         <button class="btn btn-danger" id="duplicatesModalDelete" style="background: #dc2626;">Delete Selected</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Changelog Modal -->
+  <div id="changelogModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="changelogModalTitle" aria-hidden="true">
+    <div class="modal-overlay" aria-hidden="true"></div>
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h3 id="changelogModalTitle">Bookmark Changelog</h3>
+        <button class="modal-close" id="changelogModalClose" aria-label="Close dialog">×</button>
+      </div>
+      <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
+        <div id="changelogContent" style="display: flex; flex-direction: column; gap: 12px;">
+          <!-- Will be populated dynamically -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display: flex; justify-content: space-between;">
+        <button class="btn btn-danger" id="clearChangelogBtn" style="background: #dc2626;">Clear History</button>
+        <button class="btn" id="changelogModalCancel">Close</button>
       </div>
     </div>
   </div>
