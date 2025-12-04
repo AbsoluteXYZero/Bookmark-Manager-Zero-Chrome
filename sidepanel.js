@@ -675,6 +675,7 @@ async function init() {
   await loadFolderScanTimestamps();
   await loadAutoClearSetting();
   await loadBookmarks();
+  cleanupSafetyHistory(); // Clean up stale entries on sidebar load
   await restoreCachedBookmarkStatuses();
   populateDefaultFolderSelect();
   await expandToDefaultFolder();
@@ -1357,7 +1358,7 @@ async function scanAllBookmarksForced() {
   if (rescanBtn) rescanBtn.style.display = 'none';
 
   // Process bookmarks in batches
-  const BATCH_SIZE = 5;
+  const BATCH_SIZE = 10;
   const BATCH_DELAY = 300;
 
   // Update status bar
@@ -1373,16 +1374,44 @@ async function scanAllBookmarksForced() {
     }
 
     const batch = bookmarksToCheck.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(node => checkBookmarkStatus(node.url)));
 
-    results.forEach((result, index) => {
-      const node = batch[index];
-      updateBookmarkInTree(node.id, {
+    // Check each bookmark in the batch in parallel
+    const checkPromises = batch.map(async (node) => {
+      try {
+        const result = { id: node.id };
+
+        if (linkCheckingEnabled) {
+          result.linkStatus = await checkLinkStatus(node.url, true); // Bypass cache for rescan
+        }
+
+        if (safetyCheckingEnabled) {
+          const safetyResult = await checkSafetyStatus(node.url, true); // Bypass cache for rescan
+          result.safetyStatus = safetyResult.status;
+          result.safetySources = safetyResult.sources;
+        }
+
+        return result;
+      } catch (error) {
+        console.error(`Error checking bookmark ${node.id} (${node.url}):`, error);
+        const errorResult = { id: node.id };
+        if (linkCheckingEnabled) errorResult.linkStatus = 'dead';
+        if (safetyCheckingEnabled) {
+          errorResult.safetyStatus = 'unknown';
+          errorResult.safetySources = [];
+        }
+        return errorResult;
+      }
+    });
+
+    const results = await Promise.all(checkPromises);
+
+    // Update results for this batch (update data only)
+    results.forEach((result) => {
+      updateBookmarkInTree(result.id, {
         linkStatus: result.linkStatus,
         safetyStatus: result.safetyStatus,
         safetySources: result.safetySources || []
       });
-      updateBookmarkStatusInDOM(node.id, result.linkStatus, result.safetyStatus, result.safetySources, node.url);
     });
 
     scannedCount += results.length;
@@ -1399,6 +1428,14 @@ async function scanAllBookmarksForced() {
   // Hide stop button, show rescan button
   if (stopBtn) stopBtn.style.display = 'none';
   if (rescanBtn) rescanBtn.style.display = 'flex';
+
+  // Clear checkedBookmarks to free memory after scan completes
+  checkedBookmarks.clear();
+
+  // Reset status to "Ready" after 2 seconds
+  setTimeout(() => {
+    if (scanProgress) scanProgress.textContent = 'Ready';
+  }, 2000);
 
   console.log(`Finished rescanning ${bookmarksToCheck.length} bookmarks`);
 }
@@ -1442,7 +1479,7 @@ async function autoCheckBookmarkStatuses() {
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
 
   // Process bookmarks in batches to prevent browser overload
-  const BATCH_SIZE = 5; // Check 5 bookmarks at a time
+  const BATCH_SIZE = 10; // Check 10 bookmarks at a time
   const BATCH_DELAY = 1000; // 1 second delay between batches
   let scannedCount = 0;
 
@@ -1517,6 +1554,9 @@ async function autoCheckBookmarkStatuses() {
   // Update status bar to show completion
   if (scanProgress) scanProgress.textContent = 'Ready';
   if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+
+  // Clear checkedBookmarks to free memory after scan completes
+  checkedBookmarks.clear();
 
 }
 
@@ -3502,7 +3542,7 @@ async function rescanFolder(folderId, folderTitle) {
     let dead = 0;
 
     // Process bookmarks in batches to avoid overwhelming the background service
-    const BATCH_SIZE = 5;
+    const BATCH_SIZE = 10;
     for (let i = 0; i < bookmarks.length; i += BATCH_SIZE) {
       const batch = bookmarks.slice(i, i + BATCH_SIZE);
 
@@ -3588,6 +3628,9 @@ async function rescanFolder(folderId, folderTitle) {
     console.log('[Folder Rescan] Calling renderBookmarks()...');
     renderBookmarks();
     console.log('[Folder Rescan] renderBookmarks() completed');
+
+    // Clear checkedBookmarks to free memory after folder scan completes
+    checkedBookmarks.clear();
 
     // Show summary
     const summary = [
@@ -4092,6 +4135,40 @@ async function loadSafetyHistory() {
   }
 }
 
+// Clean up safetyHistory to remove entries for URLs no longer in bookmarks
+function cleanupSafetyHistory() {
+  if (isPreviewMode || !bookmarkTree || bookmarkTree.length === 0) return;
+
+  // Collect all current bookmark URLs
+  const currentUrls = new Set();
+  const collectUrls = (nodes) => {
+    nodes.forEach(node => {
+      if (node.url) {
+        currentUrls.add(node.url);
+      }
+      if (node.children) {
+        collectUrls(node.children);
+      }
+    });
+  };
+  collectUrls(bookmarkTree);
+
+  // Remove history entries for URLs that no longer exist in bookmarks
+  const historyUrls = Object.keys(safetyHistory);
+  let removedCount = 0;
+  historyUrls.forEach(url => {
+    if (!currentUrls.has(url)) {
+      delete safetyHistory[url];
+      removedCount++;
+    }
+  });
+
+  if (removedCount > 0) {
+    console.log(`[Memory Cleanup] Removed ${removedCount} stale entries from safetyHistory`);
+    saveSafetyHistory(); // Persist the cleanup
+  }
+}
+
 // Track safety status change and alert if degraded
 function trackSafetyChange(url, newStatus, sources) {
   if (!url) return;
@@ -4106,7 +4183,12 @@ function trackSafetyChange(url, newStatus, sources) {
   const history = safetyHistory[url];
   const lastStatus = history.length > 0 ? history[history.length - 1].status : null;
 
-  // Add new entry
+  // Only track if status has actually changed
+  if (lastStatus === newStatus) {
+    return; // No change, skip adding duplicate entry
+  }
+
+  // Add new entry only when status changes
   history.push({ timestamp, status: newStatus, sources });
 
   // Keep only last 10 entries per URL
@@ -4126,7 +4208,7 @@ function trackSafetyChange(url, newStatus, sources) {
     }, 100);
   }
 
-  // Save history
+  // Save history only when status changes
   saveSafetyHistory();
 }
 
@@ -6859,6 +6941,7 @@ function setupEventListeners() {
       syncTimeout = setTimeout(async () => {
         try {
           await loadBookmarks();
+          cleanupSafetyHistory(); // Clean up stale entries after sync
           renderBookmarks();
         } catch (error) {
           console.error('[Bookmark Sync] Failed to sync:', error);

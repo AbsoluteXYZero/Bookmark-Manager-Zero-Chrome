@@ -440,6 +440,7 @@ let maliciousUrlsSet = new Set();
 let domainSourceMap = new Map(); // Track which source(s) flagged each domain
 let domainOnlyMap = new Map(); // Map of domain:port -> sources (for entries with paths like "1.2.3.4:80/malware")
 let blocklistLastUpdate = 0;
+let blocklistLoading = false; // Flag to prevent duplicate loads
 const BLOCKLIST_UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 
 // Blocklist sources - all free, no API keys required
@@ -817,6 +818,14 @@ const downloadBlocklistSource = async (source) => {
 
 // Download and aggregate all blocklist sources
 const updateBlocklistDatabase = async () => {
+  // Prevent duplicate loads
+  if (blocklistLoading) {
+    console.log(`[Blocklist] Already loading, skipping duplicate request`);
+    return true;
+  }
+
+  blocklistLoading = true;
+
   try {
     console.log(`[Blocklist] Starting update from ${BLOCKLIST_SOURCES.length} sources...`);
 
@@ -905,9 +914,11 @@ const updateBlocklistDatabase = async () => {
       sources: BLOCKLIST_SOURCES.length
     }).catch(() => {});
 
+    blocklistLoading = false;
     return true;
   } catch (error) {
     console.error(`[Blocklist] Error updating database:`, error);
+    blocklistLoading = false;
     return false;
   }
 };
@@ -1015,16 +1026,25 @@ const checkURLSafety = async (url, bypassCache = false) => {
   let result;
 
   try {
+    // If database is currently loading, return unknown without caching
+    // This prevents blocking while the startup preload completes
+    if (blocklistLoading) {
+      console.log(`[Blocklist] Database still loading, returning unknown (will recheck later)`);
+      return { status: 'unknown', sources: [] };
+    }
+
     // Update database if needed (once per 24 hours)
     const now = Date.now();
     if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL) {
       await updateBlocklistDatabase();
     }
 
-    // If database is empty, try to load it
-    if (maliciousUrlsSet.size === 0) {
+    // If database is empty and not loading, try to load it
+    if (maliciousUrlsSet.size === 0 && !blocklistLoading) {
+      console.log(`[Blocklist] Database empty, loading...`);
       const success = await updateBlocklistDatabase();
       if (!success) {
+        console.log(`[Blocklist] Could not load database, returning unknown`);
         const resultObj = { status: 'unknown', sources: [] };
         await setCachedResult(url, resultObj, 'safetyStatusCache');
         return resultObj;
