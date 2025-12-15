@@ -92,6 +92,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### Core Functionality
 - ✅ **Native Bookmark Integration** - Works directly with Chrome's bookmark system
+- ✅ **GitHub Gist Sync** - Optional cloud backup and multi-device sync via encrypted GitHub Gists
 - ✅ **Modern Material Design UI** - Clean, intuitive interface with multiple themes
 - ✅ **Side Panel Interface** - Quick access via toolbar icon
 - ✅ **Real-time Sync** - Instantly reflects bookmark changes made in Chrome
@@ -117,6 +118,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### Privacy & Security
 - 🔐 **Encrypted API Keys** - AES-256-GCM encryption for stored credentials
+- 🔒 **Encrypted Gist Tokens** - GitHub Personal Access Tokens encrypted with AES-256-GCM
 - 🚫 **No Tracking** - Zero analytics, no data collection
 - 🌐 **Offline Mode** - Works fully offline when external features disabled
 - 🗑️ **Auto-Clear Cache** - Configurable automatic cache cleanup
@@ -196,6 +198,13 @@ Install directly from the [Chrome Web Store](https://chromewebstore.google.com/d
 
 ### Settings
 Click the gear icon to access:
+- **GitHub Gist Sync:** Optional cloud backup and multi-device synchronization
+  - Authenticate with GitHub Personal Access Token
+  - Create new Gist or select existing one
+  - Manual sync: Browser ↔ Gist
+  - Auto-sync: Checks Gist every 60 seconds for updates
+  - Change notifications with "View Changes" button
+  - Double confirmation before modifying native browser bookmarks
 - **Display Options:** Toggle title, URL, status indicators, previews, preview popup
 - **View Mode:** Switch between list and grid layouts
 - **Default Start Folder:** Choose which folder to expand on sidebar load

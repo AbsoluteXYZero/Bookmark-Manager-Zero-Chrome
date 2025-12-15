@@ -2,7 +2,9 @@
 
 // Encryption utilities inlined to avoid module loading issues
 async function getDerivedKey() {
-  const browserInfo = `${navigator.userAgent}-${navigator.language}-${screen.width}x${screen.height}`;
+  // Use extension ID and browser info for key derivation (works in service workers)
+  const extensionId = chrome.runtime.id;
+  const browserInfo = `${navigator.userAgent}-${navigator.language}-${extensionId}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(browserInfo);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -515,9 +517,11 @@ const checkGoogleSafeBrowsing = async (url) => {
     const apiKey = await getDecryptedApiKey('googleSafeBrowsingApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
+      console.log(`[Google SB] No API key configured, skipping check`);
       return 'unknown';
     }
 
+    console.log(`[Google SB] Starting check for ${url}`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -556,9 +560,11 @@ const checkGoogleSafeBrowsing = async (url) => {
 
     // If matches found, URL is unsafe
     if (data.matches && data.matches.length > 0) {
+      console.log(`[Google SB] Result: UNSAFE (${data.matches.length} threats found)`);
       return 'unsafe';
     }
 
+    console.log(`[Google SB] Result: SAFE`);
     return 'safe';
 
   } catch (error) {
@@ -577,9 +583,11 @@ const checkVirusTotal = async (url) => {
     const apiKey = await getDecryptedApiKey('virusTotalApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
+      console.log(`[VirusTotal] No API key configured, skipping check`);
       return 'unknown';
     }
 
+    console.log(`[VirusTotal] Starting check for ${url}`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -605,6 +613,8 @@ const checkVirusTotal = async (url) => {
       return 'unknown';
     }
 
+    console.log(`[VirusTotal] Submission successful, waiting for analysis...`);
+
     const data = await response.json();
     const analysisId = data.data?.id;
 
@@ -613,33 +623,54 @@ const checkVirusTotal = async (url) => {
       return 'unknown';
     }
 
-    // Wait a moment for analysis to complete
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Poll for analysis results with retries
+    let analysisData;
+    let attempts = 0;
+    const maxAttempts = 5;
 
-    // Get analysis results
-    const analysisController = new AbortController();
-    const analysisTimeout = setTimeout(() => analysisController.abort(), 10000);
+    while (attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s between attempts
+      attempts++;
 
-    const analysisResponse = await fetch(
-      `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
-      {
-        method: 'GET',
-        signal: analysisController.signal,
-        headers: {
-          'x-apikey': apiKey
+      const analysisController = new AbortController();
+      const analysisTimeout = setTimeout(() => analysisController.abort(), 10000);
+
+      const analysisResponse = await fetch(
+        `https://www.virustotal.com/api/v3/analyses/${analysisId}`,
+        {
+          method: 'GET',
+          signal: analysisController.signal,
+          headers: {
+            'x-apikey': apiKey
+          }
         }
+      );
+
+      clearTimeout(analysisTimeout);
+
+      if (!analysisResponse.ok) {
+        console.error(`[VirusTotal] Analysis fetch error: ${analysisResponse.status}`);
+        return 'unknown';
       }
-    );
 
-    clearTimeout(analysisTimeout);
+      analysisData = await analysisResponse.json();
+      const status = analysisData.data?.attributes?.status;
 
-    if (!analysisResponse.ok) {
-      console.error(`[VirusTotal] Analysis fetch error: ${analysisResponse.status}`);
-      return 'unknown';
+      console.log(`[VirusTotal] Analysis status (attempt ${attempts}): ${status}`);
+
+      if (status === 'completed') {
+        break;
+      }
+
+      if (attempts === maxAttempts) {
+        console.warn(`[VirusTotal] Analysis still not complete after ${maxAttempts} attempts, using partial results`);
+      }
     }
 
-    const analysisData = await analysisResponse.json();
     const stats = analysisData.data?.attributes?.stats;
+    const status = analysisData.data?.attributes?.status;
+
+    console.log(`[VirusTotal] Full stats:`, stats);
 
     if (!stats) {
       console.error(`[VirusTotal] No stats in analysis results`);
@@ -650,17 +681,21 @@ const checkVirusTotal = async (url) => {
     const malicious = stats.malicious || 0;
     const suspicious = stats.suspicious || 0;
 
+    console.log(`[VirusTotal] Analysis complete - Malicious: ${malicious}, Suspicious: ${suspicious}`);
 
     // If 2 or more engines flag as malicious, mark as unsafe
     if (malicious >= 2) {
+      console.log(`[VirusTotal] Result: UNSAFE`);
       return 'unsafe';
     }
 
     // If flagged by 1 engine or suspicious, mark as warning
     if (malicious >= 1 || suspicious >= 2) {
+      console.log(`[VirusTotal] Result: WARNING`);
       return 'warning';
     }
 
+    console.log(`[VirusTotal] Result: SAFE`);
     return 'safe';
 
   } catch (error) {
@@ -679,8 +714,11 @@ const checkYandexSafeBrowsing = async (url) => {
     const apiKey = await getDecryptedApiKey('yandexApiKey');
 
     if (!apiKey || apiKey.trim() === '') {
+      console.log(`[Yandex SB] No API key configured, skipping check`);
       return 'unknown';
     }
+
+    console.log(`[Yandex SB] Starting check for ${url}`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
@@ -715,9 +753,11 @@ const checkYandexSafeBrowsing = async (url) => {
 
     // If matches found, URL is unsafe
     if (data.matches && data.matches.length > 0) {
+      console.log(`[Yandex SB] Result: UNSAFE (${data.matches.length} threats found)`);
       return 'unsafe';
     }
 
+    console.log(`[Yandex SB] Result: SAFE`);
     return 'safe';
 
   } catch (error) {
@@ -1045,11 +1085,18 @@ const checkURLSafety = async (url, bypassCache = false) => {
   let result;
 
   try {
-    // If database is currently loading, return unknown without caching
-    // This prevents blocking while the startup preload completes
+    // If database is currently loading, wait for it to complete
     if (blocklistLoading) {
-      console.log(`[Blocklist] Database still loading, returning unknown (will recheck later)`);
-      return { status: 'unknown', sources: [] };
+      console.log(`[Blocklist] Database still loading, waiting for completion...`);
+      await new Promise(resolve => {
+        const checkInterval = setInterval(() => {
+          if (!blocklistLoading) {
+            clearInterval(checkInterval);
+            resolve();
+          }
+        }, 100);
+      });
+      console.log(`[Blocklist] Database loading complete, proceeding with scan`);
     }
 
     // Update database if needed (once per 24 hours)

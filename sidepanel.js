@@ -262,7 +262,9 @@ function showPrivateModeIndicator() {
 
 // Encryption utilities inlined to avoid module loading issues
 async function getDerivedKey() {
-  const browserInfo = `${navigator.userAgent}-${navigator.language}-${screen.width}x${screen.height}`;
+  // Use extension ID and browser info for key derivation (consistent with background.js)
+  const extensionId = chrome.runtime.id;
+  const browserInfo = `${navigator.userAgent}-${navigator.language}-${extensionId}`;
   const encoder = new TextEncoder();
   const data = encoder.encode(browserInfo);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
@@ -294,6 +296,293 @@ async function encryptApiKey(plaintext) {
   } catch (error) {
     console.error('Encryption failed:', error);
     return null;
+  }
+}
+
+// ============================================================================
+// GITHUB GIST AUTHENTICATION & SYNC
+// ============================================================================
+
+// Gist sync state
+let gistToken = null;
+let gistId = null;
+let gistSyncEnabled = false;
+let gistSyncInterval = null;
+let gistDeviceId = null;
+let gistIsSyncing = false;
+let gistLocalVersion = 0;
+let gistLastSyncTime = null;
+
+// Get or create device ID for sync locking
+function getGistDeviceId() {
+  if (!gistDeviceId) {
+    gistDeviceId = localStorage.getItem('bmz_device_id');
+    if (!gistDeviceId) {
+      gistDeviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem('bmz_device_id', gistDeviceId);
+    }
+  }
+  return gistDeviceId;
+}
+
+// Encrypt and store GitHub token
+async function storeGistToken(token) {
+  const encrypted = await encryptApiKey(token);
+  await chrome.storage.local.set({ github_gist_token: encrypted });
+  gistToken = token;
+  console.log('GitHub token stored securely');
+}
+
+// Retrieve and decrypt GitHub token
+async function loadGistToken() {
+  const result = await chrome.storage.local.get(['github_gist_token']);
+  if (!result.github_gist_token) return null;
+  gistToken = await decryptApiKey(result.github_gist_token);
+  return gistToken;
+}
+
+// Clear GitHub token
+async function clearGistToken() {
+  await chrome.storage.local.remove(['github_gist_token']);
+  gistToken = null;
+  console.log('GitHub token cleared');
+}
+
+// Get GitHub API headers
+function getGistHeaders() {
+  if (!gistToken) {
+    throw new Error('No GitHub token available');
+  }
+  return {
+    'Authorization': `token ${gistToken}`,
+    'Accept': 'application/vnd.github.v3+json',
+    'Content-Type': 'application/json'
+  };
+}
+
+// Validate GitHub token
+async function validateGistToken() {
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: getGistHeaders()
+    });
+    if (!response.ok) {
+      throw new Error(`GitHub API error: ${response.status}`);
+    }
+    const user = await response.json();
+    console.log('GitHub token validated for user:', user.login);
+    return user;
+  } catch (error) {
+    console.error('Token validation failed:', error);
+    return null;
+  }
+}
+
+// Get all user's gists
+async function getAllGists() {
+  try {
+    const response = await fetch('https://api.github.com/gists', {
+      headers: getGistHeaders()
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch gists: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch gists:', error);
+    throw error;
+  }
+}
+
+// Find bookmark gist
+async function findBookmarkGist() {
+  try {
+    const gists = await getAllGists();
+    const bookmarkGist = gists.find(g =>
+      g.files['bookmarks.json'] ||
+      g.description?.includes('BMZ') ||
+      g.description?.includes('Bookmark Manager Zero')
+    );
+    if (bookmarkGist) {
+      console.log('Found bookmark Gist:', bookmarkGist.id);
+      return bookmarkGist.id;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to find bookmark Gist:', error);
+    throw error;
+  }
+}
+
+// Calculate SHA-256 checksum
+async function calculateChecksum(data) {
+  const { checksum, lastModified, version, editLock, ...dataToHash } = data;
+  const str = JSON.stringify(dataToHash, Object.keys(dataToHash).sort());
+  const buffer = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// Convert Chrome bookmarks to Gist format
+async function chromeBookmarksToGistFormat(chromeTree) {
+  const convertNode = (node) => {
+    if (node.url) {
+      // Bookmark
+      return {
+        id: node.id,
+        title: node.title,
+        url: node.url,
+        type: 'bookmark',
+        dateAdded: node.dateAdded || Date.now()
+      };
+    } else {
+      // Folder
+      const folder = {
+        id: node.id,
+        title: node.title || node.name || 'Unnamed Folder',
+        name: node.title || node.name || 'Unnamed Folder',
+        type: 'folder',
+        dateAdded: node.dateAdded || Date.now(),
+        children: []
+      };
+      if (node.children) {
+        folder.children = node.children.map(child => convertNode(child));
+      }
+      return folder;
+    }
+  };
+
+  // Chrome bookmark structure has a root with children
+  const roots = {};
+  if (chromeTree[0] && chromeTree[0].children) {
+    for (const rootFolder of chromeTree[0].children) {
+      const key = rootFolder.id === '1' ? 'bookmark_bar' :
+                  rootFolder.id === '2' ? 'other' :
+                  rootFolder.id === '3' ? 'mobile' : 'menu';
+      roots[key] = convertNode(rootFolder);
+    }
+  }
+
+  const gistData = {
+    version: 1,
+    checksum: '',
+    lastModified: Date.now(),
+    roots: roots
+  };
+
+  gistData.checksum = await calculateChecksum(gistData);
+  return gistData;
+}
+
+// Create new bookmark gist
+async function createBookmarkGist(bookmarkTree = null) {
+  try {
+    let tree = bookmarkTree;
+
+    // If no tree provided, get current Chrome bookmarks
+    if (!tree) {
+      const chromeTree = await chrome.bookmarks.getTree();
+      tree = await chromeBookmarksToGistFormat(chromeTree);
+    }
+
+    const response = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: getGistHeaders(),
+      body: JSON.stringify({
+        description: 'BMZ Bookmarks - Managed by Bookmark Manager Zero',
+        public: false,
+        files: {
+          'bookmarks.json': {
+            content: JSON.stringify(tree, null, 2)
+          }
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create Gist: ${response.status}`);
+    }
+
+    const gist = await response.json();
+    gistId = gist.id;
+    await chrome.storage.local.set({ bmz_gist_id: gistId });
+    console.log('Created bookmark Gist:', gistId);
+    return gist.id;
+  } catch (error) {
+    console.error('Failed to create bookmark Gist:', error);
+    throw error;
+  }
+}
+
+// Read bookmarks from gist
+async function readBookmarksFromGist(id = null) {
+  const useId = id || gistId;
+  if (!useId) {
+    throw new Error('No Gist ID provided');
+  }
+
+  try {
+    const response = await fetch(`https://api.github.com/gists/${useId}`, {
+      headers: getGistHeaders()
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Bookmark Gist not found');
+      }
+      throw new Error(`Failed to read Gist: ${response.status}`);
+    }
+
+    const gist = await response.json();
+    if (!gist.files['bookmarks.json']) {
+      throw new Error('Gist does not contain bookmarks.json');
+    }
+
+    const content = gist.files['bookmarks.json'].content;
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Failed to read bookmarks from Gist:', error);
+    throw error;
+  }
+}
+
+// Update bookmarks in gist
+async function updateBookmarksInGist(bookmarkTree, version = null) {
+  if (!gistId) {
+    throw new Error('No Gist ID provided');
+  }
+
+  try {
+    const dataWithMeta = {
+      ...bookmarkTree,
+      version: version !== null ? version : (bookmarkTree.version || 1) + 1,
+      checksum: await calculateChecksum(bookmarkTree),
+      lastModified: Date.now()
+    };
+
+    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      method: 'PATCH',
+      headers: getGistHeaders(),
+      body: JSON.stringify({
+        files: {
+          'bookmarks.json': {
+            content: JSON.stringify(dataWithMeta, null, 2)
+          }
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update Gist: ${response.status}`);
+    }
+
+    console.log('Updated bookmarks in Gist:', gistId);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to update bookmarks in Gist:', error);
+    throw error;
   }
 }
 
@@ -333,6 +622,853 @@ async function getDecryptedApiKey(keyName) {
   }
   return null;
 }
+
+// Open Gist sync dialog
+async function openGistSyncDialog() {
+  // Check if already authenticated
+  await loadGistToken();
+
+  const modal = document.createElement('div');
+  modal.id = 'gistSyncModal';
+  modal.className = 'modal';
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+  if (gistToken) {
+    // Already authenticated - show sync options
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitHub Gist Sync</h2>
+      <p style="margin: 0 0 20px 0; color: var(--md-sys-color-on-surface-variant, #aaa);">
+        ${gistId ? 'Connected to Gist: <code style="font-size: 11px;">' + gistId + '</code>' : 'Not connected to any Gist'}
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        ${gistId ? `
+          <button id="syncFromGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
+            ⬇️ Sync from Gist to Browser
+          </button>
+          <button id="syncToGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-tertiary-container, #2a2a2a); color: var(--md-sys-color-on-tertiary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+            ⬆️ Sync from Browser to Gist
+          </button>
+          <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 8px 0;">
+        ` : ''}
+        <button id="createNewGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+          Create New Gist with Current Bookmarks
+        </button>
+        <button id="selectExistingGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+          Select Existing Gist
+        </button>
+        <button id="disconnectGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
+          Disconnect & Remove Token
+        </button>
+        <button id="cancelGistDialog" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+          Cancel
+        </button>
+      </div>
+    `;
+  } else {
+    // Not authenticated - show login
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitHub Gist Sync Setup</h2>
+      <p style="margin: 0 0 16px 0; color: var(--md-sys-color-on-surface-variant, #aaa); font-size: 14px;">
+        To enable Gist sync, you need a GitHub Personal Access Token with  'gist' permissions.
+      </p>
+      <a href="https://github.com/settings/tokens/new?scopes=gist&description=Bookmark%20Manager%20Zero" target="_blank" style="display: inline-block; margin-bottom: 16px; padding: 8px 16px; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); text-decoration: none; border-radius: 8px; font-size: 13px;">
+        Create Token on GitHub →
+      </a>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 8px; font-size: 14px;">Personal Access Token:</label>
+        <input type="password" id="githubTokenInput" placeholder="ghp_xxxxxxxxxxxx" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); font-size: 14px; box-sizing: border-box;">
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button id="saveGistToken" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
+          Save & Continue
+        </button>
+        <button id="cancelGistDialog" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+          Cancel
+        </button>
+      </div>
+    `;
+  }
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  // Event listeners
+  const cancelBtn = dialog.querySelector('#cancelGistDialog');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => modal.remove());
+  }
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+
+  if (gistToken) {
+    // Authenticated state event listeners
+    const syncFromGistBtn = dialog.querySelector('#syncFromGist');
+    if (syncFromGistBtn) {
+      syncFromGistBtn.addEventListener('click', async () => {
+        modal.remove();
+        await syncFromGist();
+      });
+    }
+
+    const syncToGistBtn = dialog.querySelector('#syncToGist');
+    if (syncToGistBtn) {
+      syncToGistBtn.addEventListener('click', async () => {
+        modal.remove();
+        await syncToGist();
+      });
+    }
+
+    const createNewBtn = dialog.querySelector('#createNewGist');
+    if (createNewBtn) {
+      createNewBtn.addEventListener('click', async () => {
+        modal.remove();
+        await handleCreateNewGist();
+      });
+    }
+
+    const selectExistingBtn = dialog.querySelector('#selectExistingGist');
+    if (selectExistingBtn) {
+      selectExistingBtn.addEventListener('click', async () => {
+        modal.remove();
+        await handleSelectExistingGist();
+      });
+    }
+
+    const disconnectBtn = dialog.querySelector('#disconnectGist');
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to disconnect and remove your GitHub token?')) {
+          await clearGistToken();
+          await chrome.storage.local.remove(['bmz_gist_id']);
+          gistId = null;
+          modal.remove();
+          showToast('GitHub token removed');
+        }
+      });
+    }
+  } else {
+    // Not authenticated state event listeners
+    const saveBtn = dialog.querySelector('#saveGistToken');
+    const tokenInput = dialog.querySelector('#githubTokenInput');
+
+    if (saveBtn && tokenInput) {
+      saveBtn.addEventListener('click', async () => {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          showToast('Please enter a valid token', 'error');
+          return;
+        }
+
+        // Store token temporarily to validate
+        gistToken = token;
+
+        // Validate token
+        const user = await validateGistToken();
+        if (!user) {
+          gistToken = null;
+          showToast('Invalid token. Please check and try again.', 'error');
+          return;
+        }
+
+        // Store token securely
+        await storeGistToken(token);
+        showToast(`Authenticated as ${user.login}`);
+        modal.remove();
+
+        // Open sync options
+        await openGistSyncDialog();
+      });
+
+      tokenInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          saveBtn.click();
+        }
+      });
+
+      // Auto-focus token input
+      setTimeout(() => tokenInput.focus(), 100);
+    }
+  }
+}
+
+// Handle creating a new Gist with current bookmarks
+async function handleCreateNewGist() {
+  try {
+    showToast('Creating Gist with current bookmarks...');
+
+    const chromeTree = await chrome.bookmarks.getTree();
+    const gistData = await chromeBookmarksToGistFormat(chromeTree);
+    const newGistId = await createBookmarkGist(gistData);
+
+    gistId = newGistId;
+    await chrome.storage.local.set({ bmz_gist_id: gistId });
+
+    showToast('Gist created successfully!');
+  } catch (error) {
+    console.error('Failed to create Gist:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Handle selecting an existing Gist
+async function handleSelectExistingGist() {
+  try {
+    showToast('Loading your Gists...');
+    const gists = await getAllGists();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+    let gistList = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Select a Gist</h2>';
+
+    if (gists.length === 0) {
+      gistList += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No Gists found. Create a new one instead.</p>';
+    } else {
+      gistList += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+      gists.forEach(gist => {
+        const files = Object.keys(gist.files).join(', ');
+        const isBMZ = gist.files['bookmarks.json'] || gist.description?.includes('BMZ');
+        gistList += `
+          <button class="select-gist-btn" data-gist-id="${gist.id}" style="padding: 12px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); cursor: pointer; text-align: left; font-size: 13px;">
+            <div style="font-weight: 500; margin-bottom: 4px;">${gist.description || 'Untitled Gist'} ${isBMZ ? '<span style="color: var(--md-sys-color-primary, #818cf8);">[BMZ]</span>' : ''}</div>
+            <div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant, #aaa);">Files: ${files}</div>
+            <div style="font-size: 10px; color: var(--md-sys-color-on-surface-variant, #888); margin-top: 4px;">ID: ${gist.id}</div>
+          </button>
+        `;
+      });
+      gistList += '</div>';
+    }
+
+    gistList += `
+      <button id="cancelSelectGist" style="margin-top: 16px; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; width: 100%;">
+        Cancel
+      </button>
+    `;
+
+    dialog.innerHTML = gistList;
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    // Event listeners
+    const selectBtns = dialog.querySelectorAll('.select-gist-btn');
+    selectBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const selectedGistId = btn.dataset.gistId;
+        gistId = selectedGistId;
+        await chrome.storage.local.set({ bmz_gist_id: gistId });
+        modal.remove();
+        showToast('Gist connected: ' + gistId);
+      });
+    });
+
+    const cancelBtn = dialog.querySelector('#cancelSelectGist');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => modal.remove());
+    }
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+  } catch (error) {
+    console.error('Failed to load Gists:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Calculate diff between local and remote bookmark trees
+function calculateBookmarkDiff(localTree, remoteTree) {
+  const diff = {
+    added: [],
+    removed: [],
+    moved: [],
+    modified: []
+  };
+
+  // Create ID maps for quick lookup
+  const localMap = new Map();
+  const remoteMap = new Map();
+
+  // Recursively map all items by ID
+  const mapItems = (node, map, parentPath = '') => {
+    const path = parentPath ? `${parentPath}/${node.title || node.id}` : (node.title || node.id);
+    map.set(node.id, { node, path, parentId: node.parentId || null });
+    if (node.children) {
+      node.children.forEach(child => mapItems(child, map, path));
+    }
+  };
+
+  // Map local tree (Chrome bookmark structure)
+  if (localTree && localTree.children) {
+    localTree.children.forEach(root => mapItems(root, localMap));
+  }
+
+  // Map remote tree (Gist structure with roots)
+  if (remoteTree && remoteTree.roots) {
+    Object.values(remoteTree.roots).forEach(root => {
+      if (root) mapItems(root, remoteMap);
+    });
+  }
+
+  // Find added (in remote but not in local)
+  remoteMap.forEach((remoteItem, id) => {
+    if (!localMap.has(id)) {
+      diff.added.push({
+        id: remoteItem.node.id,
+        title: remoteItem.node.title,
+        path: remoteItem.path,
+        type: remoteItem.node.type || (remoteItem.node.url ? 'bookmark' : 'folder'),
+        url: remoteItem.node.url
+      });
+    }
+  });
+
+  // Find removed (in local but not in remote)
+  localMap.forEach((localItem, id) => {
+    if (!remoteMap.has(id)) {
+      diff.removed.push({
+        id: localItem.node.id,
+        title: localItem.node.title,
+        path: localItem.path,
+        type: localItem.node.url ? 'bookmark' : 'folder',
+        url: localItem.node.url
+      });
+    }
+  });
+
+  // Find moved/modified (in both but different)
+  localMap.forEach((localItem, id) => {
+    const remoteItem = remoteMap.get(id);
+    if (remoteItem) {
+      const localNode = localItem.node;
+      const remoteNode = remoteItem.node;
+
+      // Check if moved (different parent)
+      if (localItem.parentId !== remoteItem.parentId) {
+        diff.moved.push({
+          id,
+          title: localNode.title,
+          from: localItem.path,
+          to: remoteItem.path,
+          type: localNode.url ? 'bookmark' : 'folder'
+        });
+      }
+
+      // Check if modified (different title or URL)
+      if (localNode.title !== remoteNode.title || localNode.url !== remoteNode.url) {
+        diff.modified.push({
+          id,
+          oldTitle: localNode.title,
+          newTitle: remoteNode.title,
+          oldUrl: localNode.url,
+          newUrl: remoteNode.url,
+          path: remoteItem.path,
+          type: localNode.url ? 'bookmark' : 'folder'
+        });
+      }
+    }
+  });
+
+  return diff;
+}
+
+// Convert Gist format to Chrome bookmarks structure
+function gistFormatToChromeBookmarks(gistData) {
+  const convertNode = (node) => {
+    if (node.type === 'bookmark' || node.url) {
+      return {
+        id: node.id,
+        title: node.title,
+        url: node.url,
+        dateAdded: node.dateAdded || Date.now()
+      };
+    } else {
+      // Folder
+      const folder = {
+        id: node.id,
+        title: node.title || node.name || 'Unnamed Folder',
+        dateAdded: node.dateAdded || Date.now(),
+        children: []
+      };
+      if (node.children && node.children.length > 0) {
+        folder.children = node.children.map(child => convertNode(child));
+      }
+      return folder;
+    }
+  };
+
+  // Convert roots back to Chrome structure
+  const chromeRoots = [];
+  if (gistData.roots) {
+    if (gistData.roots.bookmark_bar) {
+      chromeRoots.push(convertNode({ ...gistData.roots.bookmark_bar, id: '1' }));
+    }
+    if (gistData.roots.other) {
+      chromeRoots.push(convertNode({ ...gistData.roots.other, id: '2' }));
+    }
+    if (gistData.roots.mobile) {
+      chromeRoots.push(convertNode({ ...gistData.roots.mobile, id: '3' }));
+    }
+  }
+
+  return [{
+    id: '0',
+    title: '',
+    children: chromeRoots
+  }];
+}
+
+// Apply remote changes to local Chrome bookmarks
+async function applyRemoteChangesToChrome(remoteGistData) {
+  // This is a DESTRUCTIVE operation - it will override local bookmarks
+  // Show double confirmation dialog
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background: var(--md-sys-color-error-container, #3b1a1a); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; color: var(--md-sys-color-on-error-container, #f9dedc); border: 2px solid var(--md-sys-color-error, #f44336);';
+
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px; color: var(--md-sys-color-error, #f44336);">
+        ⚠️ WARNING: This Will Override Your Native Browser Bookmarks
+      </h2>
+      <p style="margin: 0 0 16px 0; font-size: 14px;">
+        This action will <strong>permanently replace</strong> your current Chrome bookmarks with the data from the Gist.
+      </p>
+      <p style="margin: 0 0 20px 0; font-size: 14px; font-weight: 500;">
+        Are you absolutely sure you want to proceed?
+      </p>
+      <div style="display: flex; gap: 12px;">
+        <button id="cancelOverride" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface, #1e1e1e); color: var(--md-sys-color-on-surface, #e0e0e0); cursor: pointer; font-size: 14px;">
+          Cancel
+        </button>
+        <button id="confirmOverride" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px; font-weight: 500;">
+          Yes, Override My Bookmarks
+        </button>
+      </div>
+    `;
+
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    dialog.querySelector('#cancelOverride').addEventListener('click', () => {
+      modal.remove();
+      resolve(false);
+    });
+
+    dialog.querySelector('#confirmOverride').addEventListener('click', async () => {
+      modal.remove();
+
+      // Second confirmation
+      const confirmed = confirm(
+        'FINAL CONFIRMATION: This will permanently delete all your current Chrome bookmarks and replace them with the Gist data. This cannot be undone. Click OK to proceed.'
+      );
+
+      if (!confirmed) {
+        resolve(false);
+        return;
+      }
+
+      try {
+        showToast('Syncing from Gist... This may take a moment.');
+
+        // Get current bookmark tree
+        const currentTree = await chrome.bookmarks.getTree();
+
+        // Remove all existing bookmarks (except roots)
+        if (currentTree[0] && currentTree[0].children) {
+          for (const root of currentTree[0].children) {
+            if (root.children) {
+              for (const child of root.children) {
+                await chrome.bookmarks.removeTree(child.id);
+              }
+            }
+          }
+        }
+
+        // Add new bookmarks from Gist
+        const createNodes = async (nodes, parentId) => {
+          for (const node of nodes) {
+            if (node.url) {
+              // Create bookmark
+              await chrome.bookmarks.create({
+                parentId: parentId,
+                title: node.title,
+                url: node.url
+              });
+            } else if (node.children) {
+              // Create folder
+              const newFolder = await chrome.bookmarks.create({
+                parentId: parentId,
+                title: node.title
+              });
+              await createNodes(node.children, newFolder.id);
+            }
+          }
+        };
+
+        // Recreate bookmark structure from Gist
+        if (remoteGistData.roots) {
+          if (remoteGistData.roots.bookmark_bar && remoteGistData.roots.bookmark_bar.children) {
+            await createNodes(remoteGistData.roots.bookmark_bar.children, '1');
+          }
+          if (remoteGistData.roots.other && remoteGistData.roots.other.children) {
+            await createNodes(remoteGistData.roots.other.children, '2');
+          }
+          if (remoteGistData.roots.mobile && remoteGistData.roots.mobile.children) {
+            await createNodes(remoteGistData.roots.mobile.children, '3');
+          }
+        }
+
+        // Update local version tracking
+        gistLocalVersion = remoteGistData.version || 1;
+        await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
+
+        showToast('Bookmarks synced from Gist successfully!');
+        resolve(true);
+
+        // Reload the bookmark view
+        await loadBookmarks();
+        renderBookmarks();
+      } catch (error) {
+        console.error('Failed to apply remote changes:', error);
+        showToast(`Error: ${error.message}`, 'error');
+        resolve(false);
+      }
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+        resolve(false);
+      }
+    });
+  });
+}
+
+// Show sync diff dialog
+async function showSyncDiffDialog(diff, remoteGistData) {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+  const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
+
+  let content = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Gist Sync Changes</h2>';
+
+  if (!hasChanges) {
+    content += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No changes detected. Your local bookmarks match the Gist.</p>';
+  } else {
+    // Summary
+    content += '<div style="margin-bottom: 20px; padding: 16px; background: var(--md-sys-color-surface-variant, #2a2a2a); border-radius: 8px;">';
+    content += '<h3 style="margin: 0 0 12px 0; font-size: 16px;">Summary</h3>';
+    if (diff.added.length > 0) content += `<div style="margin-bottom: 4px; color: #4caf50;">✓ ${diff.added.length} item(s) to add</div>`;
+    if (diff.removed.length > 0) content += `<div style="margin-bottom: 4px; color: #f44336;">✗ ${diff.removed.length} item(s) to remove</div>`;
+    if (diff.moved.length > 0) content += `<div style="margin-bottom: 4px; color: #ff9800;">➜ ${diff.moved.length} item(s) to move</div>`;
+    if (diff.modified.length > 0) content += `<div style="color: #2196f3;">✎ ${diff.modified.length} item(s) to modify</div>`;
+    content += '</div>';
+
+    // Detailed changes
+    if (diff.added.length > 0) {
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #4caf50;">Added</h3>';
+      diff.added.forEach(item => {
+        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(76, 175, 80, 0.1); border-left: 3px solid #4caf50; border-radius: 4px;">
+          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
+          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
+          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${item.url}</div>` : ''}
+        </div>`;
+      });
+      content += '</div>';
+    }
+
+    if (diff.removed.length > 0) {
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #f44336;">Removed</h3>';
+      diff.removed.forEach(item => {
+        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(244, 67, 54, 0.1); border-left: 3px solid #f44336; border-radius: 4px;">
+          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
+          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
+          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${item.url}</div>` : ''}
+        </div>`;
+      });
+      content += '</div>';
+    }
+
+    if (diff.moved.length > 0) {
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #ff9800;">Moved</h3>';
+      diff.moved.forEach(item => {
+        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; border-radius: 4px;">
+          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
+          <div style="font-size: 12px; color: #aaa;">From: ${item.from}</div>
+          <div style="font-size: 12px; color: #aaa;">To: ${item.to}</div>
+        </div>`;
+      });
+      content += '</div>';
+    }
+
+    if (diff.modified.length > 0) {
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #2196f3;">Modified</h3>';
+      diff.modified.forEach(item => {
+        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; border-radius: 4px;">
+          <div style="font-weight: 500;">${item.oldTitle || 'Untitled'} → ${item.newTitle || 'Untitled'}</div>
+          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
+          ${item.oldUrl !== item.newUrl ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">URL: ${item.oldUrl} → ${item.newUrl}</div>` : ''}
+        </div>`;
+      });
+      content += '</div>';
+    }
+  }
+
+  content += `
+    <div style="display: flex; gap: 12px; margin-top: 20px;">
+      ${hasChanges && diff.removed.length > 0 ? `
+        <button id="applyRemoteChanges" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
+          Apply Changes to Local Bookmarks
+        </button>
+      ` : ''}
+      <button id="closeDiffDialog" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+        Close
+      </button>
+    </div>
+  `;
+
+  dialog.innerHTML = content;
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  const applyBtn = dialog.querySelector('#applyRemoteChanges');
+  if (applyBtn) {
+    applyBtn.addEventListener('click', async () => {
+      modal.remove();
+      await applyRemoteChangesToChrome(remoteGistData);
+    });
+  }
+
+  dialog.querySelector('#closeDiffDialog').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+// Sync from Gist to Chrome bookmarks
+async function syncFromGist() {
+  if (!gistId) {
+    showToast('No Gist connected', 'error');
+    return;
+  }
+
+  try {
+    showToast('Checking for Gist updates...');
+
+    const remoteData = await readBookmarksFromGist(gistId);
+    const localTree = await chrome.bookmarks.getTree();
+
+    const diff = calculateBookmarkDiff(localTree[0], remoteData);
+    const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
+
+    if (!hasChanges) {
+      showToast('No changes detected. Bookmarks are in sync.');
+      return;
+    }
+
+    // Show diff dialog
+    await showSyncDiffDialog(diff, remoteData);
+  } catch (error) {
+    console.error('Sync from Gist failed:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Sync from Chrome bookmarks to Gist
+async function syncToGist() {
+  if (!gistId) {
+    showToast('No Gist connected', 'error');
+    return;
+  }
+
+  try {
+    showToast('Syncing to Gist...');
+
+    const chromeTree = await chrome.bookmarks.getTree();
+    const gistData = await chromeBookmarksToGistFormat(chromeTree);
+
+    await updateBookmarksInGist(gistData);
+
+    // Update local version tracking
+    gistLocalVersion = (gistData.version || 1);
+    await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
+
+    showToast('Synced to Gist successfully!');
+  } catch (error) {
+    console.error('Sync to Gist failed:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Auto-sync: Check for Gist updates (background polling)
+async function autoCheckGistUpdates() {
+  if (gistIsSyncing || !gistId || !gistToken || !navigator.onLine) {
+    return;
+  }
+
+  gistIsSyncing = true;
+
+  try {
+    const remoteData = await readBookmarksFromGist(gistId);
+    const remoteVersion = remoteData.version || 1;
+
+    // Load local version
+    const versionResult = await chrome.storage.local.get(['gist_local_version']);
+    gistLocalVersion = versionResult.gist_local_version || 0;
+
+    // Check if remote has newer changes
+    if (remoteVersion > gistLocalVersion) {
+      console.log(`Gist has updates: remote v${remoteVersion} > local v${gistLocalVersion}`);
+
+      const localTree = await chrome.bookmarks.getTree();
+      const diff = calculateBookmarkDiff(localTree[0], remoteData);
+      const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
+
+      if (hasChanges) {
+        // Show enhanced toast notification with "View Changes" button
+        showGistUpdateToast(diff, remoteData);
+      } else {
+        // No actual changes, just update version
+        gistLocalVersion = remoteVersion;
+        await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
+      }
+    }
+
+    gistLastSyncTime = Date.now();
+    await chrome.storage.local.set({ gist_last_sync: gistLastSyncTime });
+  } catch (error) {
+    console.error('Auto-check Gist updates failed:', error);
+  } finally {
+    gistIsSyncing = false;
+  }
+}
+
+// Show enhanced toast notification for Gist updates
+function showGistUpdateToast(diff, remoteData) {
+  const totalChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length;
+
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 16px 20px;
+    background: var(--md-sys-color-primary-container, #2a2a5a);
+    color: var(--md-sys-color-on-primary-container, #e0e0ff);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 10000;
+    min-width: 320px;
+    max-width: 400px;
+  `;
+
+  toast.innerHTML = `
+    <div style="margin-bottom: 8px; font-weight: 500; font-size: 14px;">
+      Gist Update Available
+    </div>
+    <div style="font-size: 12px; margin-bottom: 12px; opacity: 0.9;">
+      ${diff.added.length} added, ${diff.removed.length} removed, ${diff.moved.length} moved, ${diff.modified.length} modified
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="viewGistChanges" style="
+        flex: 1;
+        background: var(--md-sys-color-primary, #818cf8);
+        color: var(--md-sys-color-on-primary, #fff);
+        border: none;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 500;
+      ">View Changes</button>
+      <button id="dismissGistToast" style="
+        background: transparent;
+        color: var(--md-sys-color-on-primary-container, #e0e0ff);
+        border: 1px solid currentColor;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+      ">Dismiss</button>
+    </div>
+  `;
+
+  document.body.appendChild(toast);
+
+  // View changes button
+  toast.querySelector('#viewGistChanges').addEventListener('click', () => {
+    showSyncDiffDialog(diff, remoteData);
+    toast.remove();
+  });
+
+  // Dismiss button
+  toast.querySelector('#dismissGistToast').addEventListener('click', () => {
+    toast.remove();
+  });
+
+  // Auto-remove after 30 seconds
+  setTimeout(() => {
+    if (toast.parentElement) {
+      toast.remove();
+    }
+  }, 30000);
+}
+
+// Start auto-sync polling (every 60 seconds)
+function startGistAutoSync() {
+  if (gistSyncInterval) {
+    return; // Already running
+  }
+
+  console.log('Starting Gist auto-sync (60s polling)...');
+  gistSyncInterval = setInterval(async () => {
+    if (navigator.onLine && gistId && gistToken) {
+      await autoCheckGistUpdates();
+    }
+  }, 60000); // 60 seconds
+
+  // Also run check immediately
+  autoCheckGistUpdates();
+}
+
+// Stop auto-sync polling
+function stopGistAutoSync() {
+  if (gistSyncInterval) {
+    clearInterval(gistSyncInterval);
+    gistSyncInterval = null;
+    console.log('Gist auto-sync stopped');
+  }
+}
+
+// Online/Offline event handlers
+window.addEventListener('online', async () => {
+  console.log('Back online - resuming Gist sync');
+  if (gistId && gistToken) {
+    showToast('Back online - checking for Gist updates...');
+    await autoCheckGistUpdates();
+    startGistAutoSync();
+  }
+});
+
+window.addEventListener('offline', () => {
+  console.log('Offline - pausing Gist sync');
+  stopGistAutoSync();
+});
 
 // ============================================================================
 // CHANGELOG UTILITIES
@@ -783,6 +1919,23 @@ async function init() {
   await loadSafetyHistory();
   await loadFolderScanTimestamps();
   await loadAutoClearSetting();
+  await loadGistToken();
+  const gistIdResult = await chrome.storage.local.get(['bmz_gist_id', 'gist_local_version', 'gist_last_sync']);
+  if (gistIdResult.bmz_gist_id) {
+    gistId = gistIdResult.bmz_gist_id;
+  }
+  if (gistIdResult.gist_local_version) {
+    gistLocalVersion = gistIdResult.gist_local_version;
+  }
+  if (gistIdResult.gist_last_sync) {
+    gistLastSyncTime = gistIdResult.gist_last_sync;
+  }
+
+  // Start auto-sync if Gist is connected
+  if (gistId && gistToken && navigator.onLine) {
+    startGistAutoSync();
+  }
+
   await loadBookmarks();
   cleanupSafetyHistory(); // Clean up stale entries on sidebar load
   await restoreCachedBookmarkStatuses();
@@ -6482,6 +7635,15 @@ function setupEventListeners() {
     await clearCache();
     closeAllMenus();
   });
+
+  // GitHub Gist Sync
+  const gistSyncBtn = document.getElementById('gistSyncBtn');
+  if (gistSyncBtn) {
+    gistSyncBtn.addEventListener('click', async () => {
+      await openGistSyncDialog();
+      closeAllMenus();
+    });
+  }
 
   // Auto-clear cache setting
   autoClearCacheSelect.addEventListener('change', async (e) => {
