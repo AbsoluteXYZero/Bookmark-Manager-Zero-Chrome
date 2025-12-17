@@ -37,7 +37,10 @@ async function dismissSetupCard() {
 // GLOBAL ERROR BOUNDARY
 // ============================================================================
 
-// Error toast DOM elements
+// Toast DOM elements
+let successToast;
+let successMessage;
+let successDismiss;
 let errorToast;
 let errorTitle;
 let errorMessage;
@@ -47,8 +50,20 @@ let errorDismiss;
 // Error log storage (keep last 50 errors)
 const MAX_ERROR_LOGS = 50;
 
-// Initialize error toast elements after DOM loads
+// Initialize toast elements after DOM loads
 function initErrorToast() {
+  // Success toast
+  successToast = document.getElementById('successToast');
+  successMessage = document.getElementById('successMessage');
+  successDismiss = document.getElementById('successDismiss');
+
+  if (successDismiss) {
+    successDismiss.addEventListener('click', () => {
+      hideSuccessToast();
+    });
+  }
+
+  // Error toast
   errorToast = document.getElementById('errorToast');
   errorTitle = document.getElementById('errorTitle');
   errorMessage = document.getElementById('errorMessage');
@@ -86,6 +101,35 @@ function showErrorToast(title, message) {
 function hideErrorToast() {
   if (errorToast) {
     errorToast.classList.add('hidden');
+  }
+}
+
+// Show success toast notification
+function showSuccessToast(message) {
+  if (!successToast) return;
+
+  successMessage.textContent = message;
+  successToast.classList.remove('hidden');
+
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    hideSuccessToast();
+  }, 5000);
+}
+
+// Hide success toast
+function hideSuccessToast() {
+  if (successToast) {
+    successToast.classList.add('hidden');
+  }
+}
+
+// General toast notification
+function showToast(message, type = 'success') {
+  if (type === 'error') {
+    showErrorToast('Error', message);
+  } else {
+    showSuccessToast(message);
   }
 }
 
@@ -460,10 +504,23 @@ async function chromeBookmarksToGistFormat(chromeTree) {
     for (const rootFolder of chromeTree[0].children) {
       const key = rootFolder.id === '1' ? 'bookmark_bar' :
                   rootFolder.id === '2' ? 'other' :
-                  rootFolder.id === '3' ? 'mobile' : 'menu';
-      roots[key] = convertNode(rootFolder);
+                  rootFolder.id === '3' ? 'mobile' : 'unknown';
+      if (key !== 'unknown') {
+        roots[key] = convertNode(rootFolder);
+      }
     }
   }
+
+  // Add empty menu folder for compatibility with website/Firefox
+  // Chrome doesn't have a native "Bookmarks Menu" folder
+  roots.menu = {
+    id: 'menu',
+    title: 'Bookmarks Menu',
+    name: 'Bookmarks Menu',
+    type: 'folder',
+    dateAdded: Date.now(),
+    children: []
+  };
 
   const gistData = {
     version: 1,
@@ -585,6 +642,260 @@ async function updateBookmarksInGist(bookmarkTree, version = null) {
     throw error;
   }
 }
+
+// ============================================================================
+// GitLab Snippet Functions
+// ============================================================================
+
+// GitLab Snippet global variables
+let snippetToken = null;
+let snippetId = null;
+let snippetSyncInterval = null;
+let snippetLastSyncTime = 0;
+let snippetIsSyncing = false;
+let snippetLocalVersion = 0;
+
+// Encrypt and store GitLab token
+async function storeSnippetToken(token) {
+  const encrypted = await encryptApiKey(token);
+  await chrome.storage.local.set({ gitlab_token: encrypted });
+  snippetToken = token;
+  console.log('GitLab token stored securely');
+}
+
+// Retrieve and decrypt GitLab token
+async function loadSnippetToken() {
+  const result = await chrome.storage.local.get(['gitlab_token']);
+  if (!result.gitlab_token) return null;
+  snippetToken = await decryptApiKey(result.gitlab_token);
+  return snippetToken;
+}
+
+// Clear GitLab token
+async function clearSnippetToken() {
+  await chrome.storage.local.remove(['gitlab_token']);
+  snippetToken = null;
+  console.log('GitLab token cleared');
+}
+
+// Get GitLab API headers
+function getSnippetHeaders() {
+  if (!snippetToken) {
+    throw new Error('No GitLab token available');
+  }
+  return {
+    'Authorization': `Bearer ${snippetToken}`,
+    'Content-Type': 'application/json'
+  };
+}
+
+// Validate GitLab token
+async function validateSnippetToken() {
+  try {
+    const response = await fetch('https://gitlab.com/api/v4/user', {
+      headers: getSnippetHeaders()
+    });
+    if (!response.ok) {
+      throw new Error(`GitLab API error: ${response.status}`);
+    }
+    const user = await response.json();
+    console.log('GitLab token validated for user:', user.username);
+    return user;
+  } catch (error) {
+    console.error('Token validation failed:', error);
+    return null;
+  }
+}
+
+// Get all user's snippets
+async function getAllSnippets() {
+  try {
+    const response = await fetch('https://gitlab.com/api/v4/snippets', {
+      headers: getSnippetHeaders()
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch snippets: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to fetch snippets:', error);
+    throw error;
+  }
+}
+
+// Find bookmark snippet
+async function findBookmarkSnippet() {
+  try {
+    const snippets = await getAllSnippets();
+    const bookmarkSnippet = snippets.find(s =>
+      s.title?.includes('BMZ') ||
+      s.title?.includes('Bookmark Manager Zero') ||
+      s.file_name === 'bookmarks.json'
+    );
+    if (bookmarkSnippet) {
+      console.log('Found bookmark Snippet:', bookmarkSnippet.id);
+      return bookmarkSnippet.id;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to find bookmark Snippet:', error);
+    throw error;
+  }
+}
+
+// Create new bookmark snippet
+async function createBookmarkSnippet(bookmarkTree = null) {
+  try {
+    let tree = bookmarkTree;
+
+    // If no tree provided, get current Chrome bookmarks
+    if (!tree) {
+      const chromeTree = await chrome.bookmarks.getTree();
+      tree = await chromeBookmarksToGistFormat(chromeTree);
+    }
+
+    const response = await fetch('https://gitlab.com/api/v4/snippets', {
+      method: 'POST',
+      headers: getSnippetHeaders(),
+      body: JSON.stringify({
+        title: 'BMZ Bookmarks - Managed by Bookmark Manager Zero',
+        visibility: 'private',
+        files: [
+          {
+            file_path: 'bookmarks.json',
+            content: JSON.stringify(tree, null, 2)
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to create Snippet: ${response.status} - ${errorText}`);
+    }
+
+    const snippet = await response.json();
+    snippetId = snippet.id;
+    await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+    console.log('Created bookmark Snippet:', snippetId);
+    return snippet.id;
+  } catch (error) {
+    console.error('Failed to create bookmark Snippet:', error);
+    throw error;
+  }
+}
+
+// Read bookmarks from snippet
+async function readBookmarksFromSnippet(id = null) {
+  const useId = id || snippetId;
+  if (!useId) {
+    throw new Error('No Snippet ID provided');
+  }
+
+  try {
+    const response = await fetch(`https://gitlab.com/api/v4/snippets/${useId}`, {
+      headers: getSnippetHeaders()
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Bookmark Snippet not found');
+      }
+      throw new Error(`Failed to read Snippet: ${response.status}`);
+    }
+
+    const snippet = await response.json();
+
+    // GitLab snippets have a 'files' array
+    const bookmarkFile = snippet.files?.find(f =>
+      f.path === 'bookmarks.json' || f.file_name === 'bookmarks.json'
+    );
+    if (!bookmarkFile) {
+      throw new Error('Snippet does not contain bookmarks.json');
+    }
+
+    // Get file content
+    let content = bookmarkFile.content;
+
+    // If content is not in the response, fetch it using the raw endpoint
+    if (!content) {
+      const fileResponse = await fetch(
+        `https://gitlab.com/api/v4/snippets/${useId}/files/main/bookmarks.json/raw`,
+        { headers: getSnippetHeaders() }
+      );
+      if (!fileResponse.ok) {
+        throw new Error(`Failed to fetch file content: ${fileResponse.status}`);
+      }
+      content = await fileResponse.text();
+    }
+
+    // If content is empty or just whitespace, return empty structure
+    if (!content || content.trim() === '') {
+      console.log('Snippet file is empty, returning empty bookmark structure');
+      return {
+        version: 1,
+        checksum: '',
+        lastModified: Date.now(),
+        roots: {
+          bookmark_bar: { id: '1', title: 'Bookmarks Toolbar', name: 'Bookmarks Toolbar', type: 'folder', dateAdded: Date.now(), children: [] },
+          menu: { id: '2', title: 'Bookmarks Menu', name: 'Bookmarks Menu', type: 'folder', dateAdded: Date.now(), children: [] },
+          other: { id: '3', title: 'Other Bookmarks', name: 'Other Bookmarks', type: 'folder', dateAdded: Date.now(), children: [] },
+          mobile: { id: '4', title: 'Mobile Bookmarks', name: 'Mobile Bookmarks', type: 'folder', dateAdded: Date.now(), children: [] }
+        }
+      };
+    }
+
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Failed to read bookmarks from Snippet:', error);
+    throw error;
+  }
+}
+
+// Update bookmarks in snippet
+async function updateBookmarksInSnippet(bookmarkTree, version = null) {
+  if (!snippetId) {
+    throw new Error('No Snippet ID provided');
+  }
+
+  try {
+    const dataWithMeta = {
+      ...bookmarkTree,
+      version: version !== null ? version : (bookmarkTree.version || 1) + 1,
+      checksum: await calculateChecksum(bookmarkTree),
+      lastModified: Date.now()
+    };
+
+    const response = await fetch(`https://gitlab.com/api/v4/snippets/${snippetId}`, {
+      method: 'PUT',
+      headers: getSnippetHeaders(),
+      body: JSON.stringify({
+        files: [
+          {
+            action: 'update',
+            file_path: 'bookmarks.json',
+            content: JSON.stringify(dataWithMeta, null, 2)
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update Snippet: ${response.status} - ${errorText}`);
+    }
+
+    console.log('Updated bookmarks in Snippet:', snippetId);
+    return await response.json();
+  } catch (error) {
+    console.error('Failed to update bookmarks in Snippet:', error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// End of GitLab Snippet Functions
+// ============================================================================
 
 async function decryptApiKey(encrypted) {
   if (!encrypted) return null;
@@ -884,6 +1195,325 @@ async function handleSelectExistingGist() {
   }
 }
 
+// ============================================================================
+// GitLab Snippet Sync Dialog (mirrors Gist sync dialog)
+// ============================================================================
+
+// Open GitLab Snippet sync dialog
+async function openSnippetSyncDialog() {
+  // Check if already authenticated
+  await loadSnippetToken();
+
+  const modal = document.createElement('div');
+  modal.id = 'snippetSyncModal';
+  modal.className = 'modal';
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+  if (snippetToken) {
+    // Already authenticated - show sync options
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitLab Snippet Sync</h2>
+      <p style="margin: 0 0 20px 0; color: var(--md-sys-color-on-surface-variant, #aaa);">
+        ${snippetId ? 'Connected to Snippet: <code style="font-size: 11px;">' + snippetId + '</code>' : 'Not connected to any Snippet'}
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        ${snippetId ? `
+          <button id="syncFromSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
+            ⬇️ Sync from Snippet to Browser
+          </button>
+          <button id="syncToSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-tertiary-container, #2a2a2a); color: var(--md-sys-color-on-tertiary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+            ⬆️ Sync from Browser to Snippet
+          </button>
+          <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 8px 0;">
+        ` : ''}
+        <button id="createNewSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+          Create New Snippet with Current Bookmarks
+        </button>
+        <button id="selectExistingSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
+          Select Existing Snippet
+        </button>
+        <button id="disconnectSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
+          Disconnect & Remove Token
+        </button>
+        <button id="cancelSnippetDialog" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+          Cancel
+        </button>
+      </div>
+    `;
+  } else {
+    // Not authenticated - show login
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitLab Snippet Sync Setup</h2>
+      <p style="margin: 0 0 16px 0; color: var(--md-sys-color-on-surface-variant, #aaa); font-size: 14px;">
+        To enable Snippet sync, you need a GitLab Personal Access Token with 'api' permissions.
+      </p>
+      <a href="https://gitlab.com/-/profile/personal_access_tokens?name=Bookmark+Manager+Zero&scopes=api" target="_blank" style="display: inline-block; margin-bottom: 16px; padding: 8px 16px; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); text-decoration: none; border-radius: 8px; font-size: 13px;">
+        Create Token on GitLab →
+      </a>
+      <div style="margin-bottom: 16px;">
+        <label style="display: block; margin-bottom: 8px; font-size: 14px;">Personal Access Token:</label>
+        <input type="password" id="gitlabTokenInput" placeholder="glpat-xxxxxxxxxxxx" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); font-size: 14px; box-sizing: border-box;">
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button id="saveSnippetToken" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
+          Save & Continue
+        </button>
+        <button id="cancelSnippetDialog" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+          Cancel
+        </button>
+      </div>
+    `;
+  }
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  // Event listeners
+  const cancelBtn = dialog.querySelector('#cancelSnippetDialog');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => modal.remove());
+  }
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+
+  if (snippetToken) {
+    // Authenticated state event listeners
+    const syncFromSnippetBtn = dialog.querySelector('#syncFromSnippet');
+    if (syncFromSnippetBtn) {
+      syncFromSnippetBtn.addEventListener('click', async () => {
+        modal.remove();
+        await syncFromSnippet();
+      });
+    }
+
+    const syncToSnippetBtn = dialog.querySelector('#syncToSnippet');
+    if (syncToSnippetBtn) {
+      syncToSnippetBtn.addEventListener('click', async () => {
+        modal.remove();
+        await syncToSnippet();
+      });
+    }
+
+    const createNewBtn = dialog.querySelector('#createNewSnippet');
+    if (createNewBtn) {
+      createNewBtn.addEventListener('click', async () => {
+        modal.remove();
+        await handleCreateNewSnippet();
+      });
+    }
+
+    const selectExistingBtn = dialog.querySelector('#selectExistingSnippet');
+    if (selectExistingBtn) {
+      selectExistingBtn.addEventListener('click', async () => {
+        modal.remove();
+        await handleSelectExistingSnippet();
+      });
+    }
+
+    const disconnectBtn = dialog.querySelector('#disconnectSnippet');
+    if (disconnectBtn) {
+      disconnectBtn.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to disconnect and remove your GitLab token?')) {
+          await clearSnippetToken();
+          await chrome.storage.local.remove(['bmz_snippet_id']);
+          snippetId = null;
+          modal.remove();
+          showToast('GitLab token removed');
+        }
+      });
+    }
+  } else {
+    // Not authenticated state event listeners
+    const saveBtn = dialog.querySelector('#saveSnippetToken');
+    const tokenInput = dialog.querySelector('#gitlabTokenInput');
+
+    if (saveBtn && tokenInput) {
+      saveBtn.addEventListener('click', async () => {
+        const token = tokenInput.value.trim();
+        if (!token) {
+          showToast('Please enter a valid token', 'error');
+          return;
+        }
+
+        // Store token temporarily to validate
+        snippetToken = token;
+
+        // Validate token
+        const user = await validateSnippetToken();
+        if (!user) {
+          snippetToken = null;
+          showToast('Invalid token. Please check and try again.', 'error');
+          return;
+        }
+
+        // Store token securely
+        await storeSnippetToken(token);
+        showToast(`Authenticated as ${user.username}`);
+        modal.remove();
+
+        // Open sync options
+        await openSnippetSyncDialog();
+      });
+
+      tokenInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          saveBtn.click();
+        }
+      });
+
+      // Auto-focus token input
+      setTimeout(() => tokenInput.focus(), 100);
+    }
+  }
+}
+
+// Handle creating a new Snippet with current bookmarks
+async function handleCreateNewSnippet() {
+  try {
+    showToast('Creating Snippet with current bookmarks...');
+
+    const chromeTree = await chrome.bookmarks.getTree();
+    const snippetData = await chromeBookmarksToGistFormat(chromeTree);
+    const newSnippetId = await createBookmarkSnippet(snippetData);
+
+    snippetId = newSnippetId;
+    await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+
+    showToast('Snippet created successfully!');
+  } catch (error) {
+    console.error('Failed to create Snippet:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Handle selecting an existing Snippet
+async function handleSelectExistingSnippet() {
+  try {
+    showToast('Loading your Snippets...');
+    const snippets = await getAllSnippets();
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+    let snippetList = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Select a Snippet</h2>';
+
+    if (snippets.length === 0) {
+      snippetList += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No Snippets found. Create a new one instead.</p>';
+    } else {
+      snippetList += '<div style="display: flex; flex-direction: column; gap: 8px;">';
+      snippets.forEach(snippet => {
+        const isBMZ = snippet.title?.includes('BMZ') || snippet.title?.includes('Bookmark Manager Zero');
+        snippetList += `
+          <button class="select-snippet-btn" data-snippet-id="${snippet.id}" style="padding: 12px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); cursor: pointer; text-align: left; font-size: 13px;">
+            <div style="font-weight: 500; margin-bottom: 4px;">${snippet.title || 'Untitled Snippet'} ${isBMZ ? '<span style="color: var(--md-sys-color-primary, #818cf8);">[BMZ]</span>' : ''}</div>
+            <div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant, #aaa);">Visibility: ${snippet.visibility}</div>
+            <div style="font-size: 10px; color: var(--md-sys-color-on-surface-variant, #888); margin-top: 4px;">ID: ${snippet.id}</div>
+          </button>
+        `;
+      });
+      snippetList += '</div>';
+    }
+
+    snippetList += `
+      <button id="cancelSelectSnippet" style="margin-top: 16px; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; width: 100%;">
+        Cancel
+      </button>
+    `;
+
+    dialog.innerHTML = snippetList;
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    // Event listeners
+    const selectBtns = dialog.querySelectorAll('.select-snippet-btn');
+    selectBtns.forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const selectedSnippetId = btn.dataset.snippetId;
+        snippetId = selectedSnippetId;
+        await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+        modal.remove();
+        showToast('Snippet connected: ' + snippetId);
+      });
+    });
+
+    const cancelBtn = dialog.querySelector('#cancelSelectSnippet');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => modal.remove());
+    }
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.remove();
+    });
+  } catch (error) {
+    console.error('Failed to load Snippets:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Sync from Snippet to Chrome bookmarks (mirrors syncFromGist)
+async function syncFromSnippet() {
+  if (!snippetId) {
+    showToast('No Snippet connected', 'error');
+    return;
+  }
+
+  try {
+    showToast('Checking for Snippet updates...');
+
+    const remoteData = await readBookmarksFromSnippet(snippetId);
+    const localTree = await chrome.bookmarks.getTree();
+
+    const diff = calculateBookmarkDiff(localTree[0], remoteData);
+    const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
+
+    if (!hasChanges) {
+      showToast('No changes detected. Bookmarks are in sync.');
+      return;
+    }
+
+    // Show diff dialog (reuse the gist diff dialog with snippet data)
+    await showSyncDiffDialog(diff, remoteData);
+  } catch (error) {
+    console.error('Sync from Snippet failed:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
+// Sync from Chrome bookmarks to Snippet (mirrors syncToGist)
+async function syncToSnippet() {
+  if (!snippetId) {
+    showToast('No Snippet connected', 'error');
+    return;
+  }
+
+  try {
+    showToast('Syncing to Snippet...');
+
+    const chromeTree = await chrome.bookmarks.getTree();
+    const snippetData = await chromeBookmarksToGistFormat(chromeTree);
+
+    await updateBookmarksInSnippet(snippetData);
+
+    // Update local version tracking
+    snippetLocalVersion = (snippetData.version || 1);
+    await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
+
+    showToast('Synced to Snippet successfully!');
+  } catch (error) {
+    console.error('Sync to Snippet failed:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
 // Calculate diff between local and remote bookmark trees
 function calculateBookmarkDiff(localTree, remoteTree) {
   const diff = {
@@ -1011,9 +1641,37 @@ function gistFormatToChromeBookmarks(gistData) {
     if (gistData.roots.bookmark_bar) {
       chromeRoots.push(convertNode({ ...gistData.roots.bookmark_bar, id: '1' }));
     }
-    if (gistData.roots.other) {
-      chromeRoots.push(convertNode({ ...gistData.roots.other, id: '2' }));
+
+    // Merge "menu" and "other" folders into Chrome's "Other Bookmarks" (ID='2')
+    // Chrome doesn't have a separate "Bookmarks Menu" folder like Firefox
+    const otherFolder = {
+      id: '2',
+      title: 'Other Bookmarks',
+      name: 'Other Bookmarks',
+      type: 'folder',
+      dateAdded: Date.now(),
+      children: []
+    };
+
+    // Add "Other Bookmarks" children first
+    if (gistData.roots.other && gistData.roots.other.children) {
+      otherFolder.children.push(...gistData.roots.other.children);
     }
+
+    // Add "Bookmarks Menu" children in a subfolder to keep them organized
+    if (gistData.roots.menu && gistData.roots.menu.children && gistData.roots.menu.children.length > 0) {
+      otherFolder.children.push({
+        id: 'menu_imported',
+        title: 'Bookmarks Menu (imported)',
+        name: 'Bookmarks Menu (imported)',
+        type: 'folder',
+        dateAdded: Date.now(),
+        children: gistData.roots.menu.children
+      });
+    }
+
+    chromeRoots.push(convertNode(otherFolder));
+
     if (gistData.roots.mobile) {
       chromeRoots.push(convertNode({ ...gistData.roots.mobile, id: '3' }));
     }
@@ -1121,9 +1779,22 @@ async function applyRemoteChangesToChrome(remoteGistData) {
           if (remoteGistData.roots.bookmark_bar && remoteGistData.roots.bookmark_bar.children) {
             await createNodes(remoteGistData.roots.bookmark_bar.children, '1');
           }
+
+          // Create "Other Bookmarks" folder (ID='2')
           if (remoteGistData.roots.other && remoteGistData.roots.other.children) {
             await createNodes(remoteGistData.roots.other.children, '2');
           }
+
+          // Import "Bookmarks Menu" into "Other Bookmarks" as a subfolder
+          // Chrome doesn't have a native "Bookmarks Menu" folder like Firefox
+          if (remoteGistData.roots.menu && remoteGistData.roots.menu.children && remoteGistData.roots.menu.children.length > 0) {
+            const menuFolder = await chrome.bookmarks.create({
+              parentId: '2',
+              title: 'Bookmarks Menu (imported)'
+            });
+            await createNodes(remoteGistData.roots.menu.children, menuFolder.id);
+          }
+
           if (remoteGistData.roots.mobile && remoteGistData.roots.mobile.children) {
             await createNodes(remoteGistData.roots.mobile.children, '3');
           }
@@ -2330,6 +3001,65 @@ function setZoom(newZoom) {
   updateZoomDisplay();
   if (!isPreviewMode) {
     safeStorage.set({ zoomLevel });
+  }
+}
+
+// ============================================================================
+// PROVIDER SWITCHING (GitHub/GitLab)
+// ============================================================================
+
+/**
+ * Switch between GitHub and GitLab providers
+ * Updates logo styles and shows/hides instruction panels
+ */
+function switchToProvider(provider) {
+  const githubLogo = document.getElementById('githubLogo');
+  const gitlabLogo = document.getElementById('gitlabLogo');
+  const githubInstructions = document.getElementById('githubInstructions');
+  const gitlabInstructions = document.getElementById('gitlabInstructions');
+
+  if (!githubLogo || !gitlabLogo) {
+    return;
+  }
+
+  console.log('Switching to provider:', provider);
+
+  if (provider === 'github') {
+    // Highlight GitHub
+    githubLogo.style.background = 'var(--md-sys-color-primary)';
+    githubLogo.style.opacity = '1';
+    githubLogo.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    const githubSvg = githubLogo.querySelector('svg');
+    if (githubSvg) githubSvg.style.color = 'var(--md-sys-color-on-primary)';
+
+    // Dim GitLab
+    gitlabLogo.style.background = 'var(--md-sys-color-surface-variant)';
+    gitlabLogo.style.opacity = '0.6';
+    gitlabLogo.style.boxShadow = 'none';
+    const gitlabSvg = gitlabLogo.querySelector('svg');
+    if (gitlabSvg) gitlabSvg.style.color = 'var(--md-sys-color-on-surface)';
+
+    // Show GitHub instructions
+    if (githubInstructions) githubInstructions.style.display = 'block';
+    if (gitlabInstructions) gitlabInstructions.style.display = 'none';
+  } else {
+    // Highlight GitLab
+    gitlabLogo.style.background = 'var(--md-sys-color-primary)';
+    gitlabLogo.style.opacity = '1';
+    gitlabLogo.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+    const gitlabSvg = gitlabLogo.querySelector('svg');
+    if (gitlabSvg) gitlabSvg.style.color = 'var(--md-sys-color-on-primary)';
+
+    // Dim GitHub
+    githubLogo.style.background = 'var(--md-sys-color-surface-variant)';
+    githubLogo.style.opacity = '0.6';
+    githubLogo.style.boxShadow = 'none';
+    const githubSvg = githubLogo.querySelector('svg');
+    if (githubSvg) githubSvg.style.color = 'var(--md-sys-color-on-surface)';
+
+    // Show GitLab instructions
+    if (githubInstructions) githubInstructions.style.display = 'none';
+    if (gitlabInstructions) gitlabInstructions.style.display = 'block';
   }
 }
 
@@ -7645,6 +8375,14 @@ function setupEventListeners() {
     });
   }
 
+  const snippetSyncBtn = document.getElementById('snippetSyncBtn');
+  if (snippetSyncBtn) {
+    snippetSyncBtn.addEventListener('click', async () => {
+      await openSnippetSyncDialog();
+      closeAllMenus();
+    });
+  }
+
   // Auto-clear cache setting
   autoClearCacheSelect.addEventListener('change', async (e) => {
     const autoClearDays = e.target.value;
@@ -8755,6 +9493,152 @@ function setupEventListeners() {
   undoDismiss.addEventListener('click', () => {
     hideUndoToast();
   });
+
+  // ============================================================================
+  // PROVIDER SWITCHING & LOGIN HANDLERS
+  // ============================================================================
+
+  // Logo click handlers - switch between GitHub and GitLab
+  const githubLogo = document.getElementById('githubLogo');
+  const gitlabLogo = document.getElementById('gitlabLogo');
+
+  if (githubLogo) {
+    githubLogo.addEventListener('click', () => {
+      switchToProvider('github');
+    });
+  }
+
+  if (gitlabLogo) {
+    gitlabLogo.addEventListener('click', () => {
+      switchToProvider('gitlab');
+    });
+  }
+
+  // GitHub login button handler
+  const loginBtn = document.getElementById('loginBtn');
+  const tokenInput = document.getElementById('tokenInput');
+  const loginError = document.getElementById('loginError');
+
+  if (loginBtn && tokenInput) {
+    // Handle Enter key in token input
+    tokenInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        loginBtn.click();
+      }
+    });
+
+    loginBtn.onclick = async () => {
+      const token = tokenInput.value.trim();
+
+      if (!token) {
+        if (loginError) {
+          loginError.textContent = 'Please enter your Personal Access Token';
+          loginError.style.display = 'block';
+        }
+        return;
+      }
+
+      // Show loading state
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Authenticating...';
+      if (loginError) loginError.style.display = 'none';
+
+      try {
+        // Validate token
+        gistToken = token;
+        const user = await validateGistToken();
+
+        if (!user) {
+          throw new Error('Invalid GitHub token');
+        }
+
+        console.log(`Authenticated with GitHub:`, user.login);
+
+        // Store token securely
+        await storeGistToken(token);
+
+        // Show success message
+        showToast(`Authenticated as ${user.login}`);
+
+        // Open Gist sync dialog
+        await openGistSyncDialog();
+
+      } catch (error) {
+        console.error('Login failed:', error);
+        if (loginError) {
+          loginError.textContent = error.message || 'Authentication failed. Please check your token and try again.';
+          loginError.style.display = 'block';
+        }
+
+        // Reset button
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login with GitHub';
+      }
+    };
+  }
+
+  // GitLab login button handler
+  const loginBtnGitlab = document.getElementById('loginBtnGitlab');
+  const tokenInputGitlab = document.getElementById('tokenInputGitlab');
+  const loginErrorGitlab = document.getElementById('loginErrorGitlab');
+
+  if (loginBtnGitlab && tokenInputGitlab) {
+    // Handle Enter key in token input
+    tokenInputGitlab.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        loginBtnGitlab.click();
+      }
+    });
+
+    loginBtnGitlab.onclick = async () => {
+      const token = tokenInputGitlab.value.trim();
+
+      if (!token) {
+        if (loginErrorGitlab) {
+          loginErrorGitlab.textContent = 'Please enter your Personal Access Token';
+          loginErrorGitlab.style.display = 'block';
+        }
+        return;
+      }
+
+      // Show loading state
+      loginBtnGitlab.disabled = true;
+      loginBtnGitlab.textContent = 'Authenticating...';
+      if (loginErrorGitlab) loginErrorGitlab.style.display = 'none';
+
+      try {
+        // Validate token
+        snippetToken = token;
+        const user = await validateSnippetToken();
+
+        if (!user) {
+          throw new Error('Invalid GitLab token');
+        }
+
+        console.log(`Authenticated with GitLab:`, user.username);
+
+        // Store token securely
+        await storeSnippetToken(token);
+
+        // Show success message
+        showToast(`Authenticated as ${user.username}`);
+
+        // Open Snippet sync dialog
+        await openSnippetSyncDialog();
+
+      } catch (error) {
+        console.error('Login failed:', error);
+        if (loginErrorGitlab) {
+          loginErrorGitlab.textContent = error.message || 'Authentication failed. Please check your token and try again.';
+          loginErrorGitlab.style.display = 'block';
+        }
+
+        // Reset button
+        loginBtnGitlab.disabled = false;
+        loginBtnGitlab.textContent = 'Login with GitLab';
+      }
+    };
+  }
 }
 
 // Highlight the selected item (folder or bookmark) for keyboard navigation
