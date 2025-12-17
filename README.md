@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-2.7.2-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-3.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
