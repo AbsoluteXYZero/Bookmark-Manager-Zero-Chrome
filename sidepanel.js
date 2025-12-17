@@ -9028,7 +9028,7 @@ function setupEventListeners() {
   // Help & Documentation
   const helpDocsBtn = document.getElementById('helpDocsBtn');
   helpDocsBtn.addEventListener('click', () => {
-    const readmeUrl = 'https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/blob/main/README.md';
+    const readmeUrl = 'https://bmz.absolutezero.fyi/';
     if (isPreviewMode) {
       window.open(readmeUrl, '_blank');
     } else {
