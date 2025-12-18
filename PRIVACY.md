@@ -185,13 +185,13 @@ As the extension stores all data locally on your device:
 ## Contact
 
 For privacy concerns or questions:
-- **GitHub Issues:** https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/issues
+- **GitLab Issues:** https://gitlab.com/AbsoluteXYZero/BMZ-Chrome/-/issues
 - **Extension Developer:** AbsoluteXYZero
 
 ## Open Source
 
 This extension is open source. You can audit the code at:
-https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome
+https://gitlab.com/AbsoluteXYZero/BMZ-Chrome/
 
 ## Summary
 

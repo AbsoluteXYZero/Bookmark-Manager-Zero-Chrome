@@ -6,7 +6,7 @@
 
 **A modern, privacy-focused interface for managing your Chrome bookmarks.**
 
-[![Version](https://img.shields.io/badge/version-3.0-blue)](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/releases)
+[![Version](https://img.shields.io/badge/version-3.0-blue)]
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
 
@@ -94,7 +94,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### Core Functionality
 - ✅ **Native Bookmark Integration** - Works directly with Chrome's bookmark system
-- ✅ **GitHub Gist Sync** - Optional cloud backup and multi-device sync via encrypted GitHub Gists
+- ✅ **GitLab Snippet Sync** - Optional cloud backup and multi-device sync via encrypted GitLab Snippets
 - ✅ **Modern Material Design UI** - Clean, intuitive interface with multiple themes
 - ✅ **Side Panel Interface** - Quick access via toolbar icon
 - ✅ **Real-time Sync** - Instantly reflects bookmark changes made in Chrome
@@ -120,7 +120,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### Privacy & Security
 - 🔐 **Encrypted API Keys** - AES-256-GCM encryption for stored credentials
-- 🔒 **Encrypted Gist Tokens** - GitHub Personal Access Tokens encrypted with AES-256-GCM
+- 🔒 **Encrypted GitLab Tokens** - GitLab Personal Access Tokens encrypted with AES-256-GCM
 - 🚫 **No Tracking** - Zero analytics, no data collection
 - 🌐 **Offline Mode** - Works fully offline when external features disabled
 - 🗑️ **Auto-Clear Cache** - Configurable automatic cache cleanup
@@ -162,7 +162,7 @@ Install directly from the [Chrome Web Store](https://chromewebstore.google.com/d
 ### Manual Installation (Developer Mode)
 1. Clone this repository:
    ```bash
-   git clone https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome.git
+   git clone https://gitlab.com/AbsoluteXYZero/BMZ-Chrome.git
    ```
 2. Open Chrome and navigate to `chrome://extensions`
 3. Enable "Developer mode" (toggle in top right)
@@ -200,11 +200,10 @@ Install directly from the [Chrome Web Store](https://chromewebstore.google.com/d
 
 ### Settings
 Click the gear icon to access:
-- **GitHub Gist Sync:** Optional cloud backup and multi-device synchronization
-  - Authenticate with GitHub Personal Access Token
-  - Create new Gist or select existing one
-  - Manual sync: Browser ↔ Gist
-  - Auto-sync: Checks Gist every 60 seconds for updates
+- **GitLab Snippet Sync:** Optional cloud backup and multi-device synchronization
+  - Authenticate with GitLab Personal Access Token
+  - Create new Snippet or select existing one
+  - Manual sync: Browser ↔ Snippet
   - Change notifications with "View Changes" button
   - Double confirmation before modifying native browser bookmarks
 - **Display Options:** Toggle title, URL, status indicators, previews, preview popup
@@ -492,13 +491,13 @@ No build process required - pure vanilla JavaScript.
 - ✅ XSS protection
 
 ### Reporting Security Issues
-Please report security vulnerabilities via GitHub Issues (mark as security issue).
+Please report security vulnerabilities via GitLab Issues (mark as security issue).
 
 ## Browser Compatibility
 
 - **Chrome:** ✅ Fully supported (Manifest V3)
 - **Edge:** ✅ Should work (Chromium-based)
-- **Firefox:** ❌ Use [Firefox version](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Firefox)
+- **Firefox:** ❌ Use [Firefox version](https://gitlab.com/AbsoluteXYZero/BMZ-Firefox)
 
 ## Roadmap
 
@@ -860,8 +859,8 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome/issues)
-- **Source Code:** [GitHub Repository](https://github.com/AbsoluteXYZero/Bookmark-Manager-Zero-Chrome)
+- **Issues:** [GitLab Issues](https://gitlab.com/AbsoluteXYZero/BMZ-Chrome/-/issues)
+- **Source Code:** [GitLab Repository](https://gitlab.com/AbsoluteXYZero/BMZ-Chrome/)
 - **Buy Me a Coffee:** [Support Development](https://buymeacoffee.com/absolutexyzero)
 
 ## Acknowledgments
