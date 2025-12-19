@@ -457,7 +457,47 @@ let domainSourceMap = new Map(); // Track which source(s) flagged each domain
 let domainOnlyMap = new Map(); // Map of domain:port -> sources (for entries with paths like "1.2.3.4:80/malware")
 let blocklistLastUpdate = 0;
 let blocklistLoading = false; // Flag to prevent duplicate loads
-const BLOCKLIST_UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+const BLOCKLIST_UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // This is now superseded by the same-day check below
+
+// Helper to check if two timestamps are on the same calendar day.
+function isSameDay(timestamp1, timestamp2) {
+    if (!timestamp1 || !timestamp2 || timestamp1 === 0 || timestamp2 === 0) return false;
+    const d1 = new Date(timestamp1);
+    const d2 = new Date(timestamp2);
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+}
+
+// On startup, load the last update timestamp from storage and update if stale.
+(async () => {
+    try {
+        const result = await chrome.storage.local.get(['blocklistLastUpdate']);
+        if (result.blocklistLastUpdate) {
+            blocklistLastUpdate = result.blocklistLastUpdate;
+            console.log(`[Blocklist] Loaded last update timestamp from storage: ${new Date(blocklistLastUpdate).toISOString()}`);
+
+            const now = Date.now();
+            if (!isSameDay(now, blocklistLastUpdate)) {
+                console.log('[Startup] Blocklist is stale on startup. Pre-loading in background...');
+                updateBlocklistDatabase(); // Run in background
+            }
+        } else {
+            console.log('[Blocklist] No last update timestamp found. Will load on first scan or install.');
+        }
+    } catch (e) {
+        console.error('[Blocklist] Error loading last update timestamp:', e);
+    }
+})();
+
+// On install/update, force a blocklist download.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === 'install' || details.reason === 'update') {
+    console.log(`[Setup] Extension ${details.reason}ed. Pre-loading blocklist database...`);
+    // Don't need to await, let it run in the background
+    updateBlocklistDatabase();
+  }
+});
 
 // Blocklist sources - all free, no API keys required
 const BLOCKLIST_SOURCES = [
@@ -577,6 +617,7 @@ const checkGoogleSafeBrowsing = async (url) => {
 // Get a free API key at: https://www.virustotal.com/gui/my-apikey
 // Free tier: 500 requests per day, 4 requests per minute
 // API key is stored in chrome.storage.local.virusTotalApiKey
+let virusTotalRateLimited = false;
 const checkVirusTotal = async (url) => {
   try {
     // Get encrypted API key from storage and decrypt it
@@ -587,12 +628,84 @@ const checkVirusTotal = async (url) => {
       return 'unknown';
     }
 
+    // Check if we've hit rate limit during this scan session
+    if (virusTotalRateLimited) {
+      console.log(`[VirusTotal] Rate limited, skipping check for ${url}`);
+      return 'unknown';
+    }
+
     console.log(`[VirusTotal] Starting check for ${url}`);
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+    // First, try to get existing cached report (faster, doesn't create new scan)
+    const urlId = btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
-    // VirusTotal V3 API - URL scan
+    try {
+      const reportController = new AbortController();
+      const reportTimeout = setTimeout(() => reportController.abort(), 8000);
+
+      const reportResponse = await fetch(
+        `https://www.virustotal.com/api/v3/urls/${urlId}`,
+        {
+          method: 'GET',
+          signal: reportController.signal,
+          headers: {
+            'x-apikey': apiKey
+          }
+        }
+      );
+
+      clearTimeout(reportTimeout);
+
+      if (reportResponse.ok) {
+        const reportData = await reportResponse.json();
+        const stats = reportData.data?.attributes?.last_analysis_stats;
+
+        if (stats) {
+          console.log(`[VirusTotal] Using cached report - Stats:`, stats);
+
+          const malicious = stats.malicious || 0;
+          const suspicious = stats.suspicious || 0;
+
+          console.log(`[VirusTotal] Analysis complete - Malicious: ${malicious}, Suspicious: ${suspicious}`);
+
+          if (malicious >= 2) {
+            console.log(`[VirusTotal] Result: UNSAFE`);
+            return 'unsafe';
+          }
+
+          if (malicious >= 1 || suspicious >= 2) {
+            console.log(`[VirusTotal] Result: WARNING`);
+            return 'warning';
+          }
+
+          console.log(`[VirusTotal] Result: SAFE`);
+          return 'safe';
+        } else {
+          console.log(`[VirusTotal] Cached report found but no stats available`);
+        }
+      } else {
+        console.log(`[VirusTotal] Cached report GET failed with status: ${reportResponse.status}`);
+        if (reportResponse.status === 429) {
+          virusTotalRateLimited = true;
+          console.log(`[VirusTotal] Rate limit hit, will skip remaining checks`);
+        }
+      }
+    } catch (reportError) {
+      console.log(`[VirusTotal] Error fetching cached report:`, reportError.message);
+    }
+
+    console.log(`[VirusTotal] No cached report available, submitting new scan...`);
+
+    // Check rate limit again before submitting new scan
+    if (virusTotalRateLimited) {
+      console.log(`[VirusTotal] Rate limited, skipping new scan submission for ${url}`);
+      return 'unknown';
+    }
+
+    // No cached report found, submit new scan
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
     const response = await fetch(
       `https://www.virustotal.com/api/v3/urls`,
       {
@@ -610,6 +723,10 @@ const checkVirusTotal = async (url) => {
 
     if (!response.ok) {
       console.error(`[VirusTotal] API error: ${response.status}`);
+      if (response.status === 429) {
+        virusTotalRateLimited = true;
+        console.log(`[VirusTotal] Rate limit hit, will skip remaining checks`);
+      }
       return 'unknown';
     }
 
@@ -629,7 +746,7 @@ const checkVirusTotal = async (url) => {
     const maxAttempts = 15; // Increased from 5 to 15 (30 seconds total)
 
     while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s between attempts
+      await new Promise(resolve => setTimeout(resolve, 2000));
       attempts++;
 
       const analysisController = new AbortController();
@@ -650,6 +767,10 @@ const checkVirusTotal = async (url) => {
 
       if (!analysisResponse.ok) {
         console.error(`[VirusTotal] Analysis fetch error: ${analysisResponse.status}`);
+        if (analysisResponse.status === 429) {
+          virusTotalRateLimited = true;
+          console.log(`[VirusTotal] Rate limit hit during analysis, will skip remaining checks`);
+        }
         return 'unknown';
       }
 
@@ -668,7 +789,6 @@ const checkVirusTotal = async (url) => {
     }
 
     const stats = analysisData.data?.attributes?.stats;
-    const status = analysisData.data?.attributes?.status;
 
     console.log(`[VirusTotal] Full stats:`, stats);
 
@@ -677,19 +797,16 @@ const checkVirusTotal = async (url) => {
       return 'unknown';
     }
 
-    // Check if any engines detected malicious/suspicious content
     const malicious = stats.malicious || 0;
     const suspicious = stats.suspicious || 0;
 
     console.log(`[VirusTotal] Analysis complete - Malicious: ${malicious}, Suspicious: ${suspicious}`);
 
-    // If 2 or more engines flag as malicious, mark as unsafe
     if (malicious >= 2) {
       console.log(`[VirusTotal] Result: UNSAFE`);
       return 'unsafe';
     }
 
-    // If flagged by 1 engine or suspicious, mark as warning
     if (malicious >= 1 || suspicious >= 2) {
       console.log(`[VirusTotal] Result: WARNING`);
       return 'warning';
@@ -1099,10 +1216,11 @@ const checkURLSafety = async (url, bypassCache = false) => {
       console.log(`[Blocklist] Database loading complete, proceeding with scan`);
     }
 
-    // Update database if needed (once per 24 hours)
+    // Update database if needed (if not updated today)
     const now = Date.now();
-    if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL) {
-      await updateBlocklistDatabase();
+    if (!isSameDay(now, blocklistLastUpdate)) {
+        console.log(`[Blocklist] Database last updated on a different day, forcing update.`);
+        await updateBlocklistDatabase();
     }
 
     // If database is empty and not loading, try to load it
@@ -1370,7 +1488,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   // Background scan control
   if (request.action === "startBackgroundScan") {
-    startBackgroundScan().then(result => {
+    startBackgroundScan({
+      bookmarksToScan: request.bookmarks,
+      bypassCache: request.bypassCache
+    }).then(result => {
       sendResponse(result);
     });
     return true; // Required for async response
@@ -1408,8 +1529,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Trigger blocklist update if needed, then wait for it to be ready
     (async () => {
       const now = Date.now();
-      if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL || maliciousUrlsSet.size === 0) {
-        console.log('[Blocklist] Ensuring database is up to date...');
+      if (!isSameDay(now, blocklistLastUpdate) || maliciousUrlsSet.size === 0) {
+        console.log('[Blocklist] Ensuring database is up to date (stale or empty)...');
         await updateBlocklistDatabase();
       }
 
@@ -1463,11 +1584,17 @@ async function getAllBookmarks() {
 }
 
 // Start background scanning
-async function startBackgroundScan() {
+async function startBackgroundScan(options = {}) {
+  const { bookmarksToScan, bypassCache = false } = options;
+
   if (backgroundScanState.isScanning) {
     console.log('[Background Scan] Already scanning');
     return { success: false, message: 'Scan already in progress' };
   }
+
+  // Reset rate limiting for new scan
+  virusTotalRateLimited = false;
+  console.log('[VirusTotal] Rate limit reset for new scan');
 
   try {
     // Get user settings
@@ -1480,14 +1607,16 @@ async function startBackgroundScan() {
       return { success: false, message: 'Link and safety checking are both disabled' };
     }
 
-    // Clear cache
-    await chrome.storage.local.remove(['linkStatusCache', 'safetyStatusCache']);
+    if (bypassCache) {
+        console.log('[Background Scan] Bypassing cache for rescan');
+        await chrome.storage.local.remove(['linkStatusCache', 'safetyStatusCache']);
+    }
 
     // Ensure blocklist database is ready (triggers update if needed, then waits for completion)
     // This prevents all bookmarks from getting 'unknown' safety status
     const now = Date.now();
-    if (now - blocklistLastUpdate > BLOCKLIST_UPDATE_INTERVAL || maliciousUrlsSet.size === 0) {
-      console.log('[Background Scan] Ensuring blocklist database is up to date...');
+    if (!isSameDay(now, blocklistLastUpdate) || maliciousUrlsSet.size === 0) {
+      console.log('[Background Scan] Ensuring blocklist database is up to date (stale or empty)...');
       chrome.runtime.sendMessage({
         type: 'scanStatus',
         message: 'Loading security database...'
@@ -1516,37 +1645,77 @@ async function startBackgroundScan() {
       console.log('[Background Scan] Blocklist ready');
     }
 
-    // Get all bookmarks
-    const allBookmarks = await getAllBookmarks();
+    // Get bookmarks to scan
+    const bookmarks = bookmarksToScan || await getAllBookmarks();
 
-    console.log(`[Background Scan] Starting scan of ${allBookmarks.length} bookmarks`);
+    console.log(`[Background Scan] Starting scan of ${bookmarks.length} bookmarks`);
 
     // Initialize scan state
     backgroundScanState = {
       isScanning: true,
       isCancelled: false,
-      totalBookmarks: allBookmarks.length,
+      totalBookmarks: bookmarks.length,
       scannedCount: 0,
-      bookmarksQueue: allBookmarks,
+      bookmarksQueue: bookmarks,
       checkedBookmarks: new Set(),
       linkCheckingEnabled,
-      safetyCheckingEnabled
+      safetyCheckingEnabled,
+      bypassCache
     };
 
     // Notify UI that scan has started
     chrome.runtime.sendMessage({
       type: 'scanStarted',
-      total: allBookmarks.length
+      total: bookmarks.length
     }).catch(() => {}); // Ignore if no listeners
 
     // Start processing the queue
     processBackgroundScanQueue();
 
-    return { success: true, total: allBookmarks.length };
+    return { success: true, total: bookmarks.length };
   } catch (error) {
     console.error('[Background Scan] Error starting scan:', error);
     backgroundScanState.isScanning = false;
     return { success: false, message: error.message };
+  }
+}
+
+// Performance optimization: Batch results to reduce main thread messages
+let pendingResults = [];
+let batchTimer = null;
+
+function queueResult(result) {
+  if (result) {
+    pendingResults.push(result);
+  }
+
+  // Clear existing timer
+  if (batchTimer) {
+    clearTimeout(batchTimer);
+  }
+
+  const BATCH_SIZE = 10;
+  const BATCH_TIMEOUT = 500; // ms
+
+  // Send batch after a delay or when the batch is full
+  if (pendingResults.length >= BATCH_SIZE || backgroundScanState.bookmarksQueue.length === 0) {
+    if (pendingResults.length > 0) {
+      chrome.runtime.sendMessage({
+        type: 'scanBatchComplete',
+        results: pendingResults
+      }).catch(() => {});
+      pendingResults = [];
+    }
+  } else {
+    batchTimer = setTimeout(() => {
+      if (pendingResults.length > 0) {
+        chrome.runtime.sendMessage({
+          type: 'scanBatchComplete',
+          results: pendingResults
+        }).catch(() => {});
+        pendingResults = [];
+      }
+    }, BATCH_TIMEOUT);
   }
 }
 
@@ -1576,31 +1745,26 @@ async function processBackgroundScanQueue() {
 
         // Check link status
         if (backgroundScanState.linkCheckingEnabled) {
-          result.linkStatus = await checkLinkStatus(bookmark.url, true); // Bypass cache
+          result.linkStatus = await checkLinkStatus(bookmark.url, backgroundScanState.bypassCache);
         }
 
         // Check safety status
         if (backgroundScanState.safetyCheckingEnabled) {
-          const safetyResult = await checkURLSafety(bookmark.url, true); // Bypass cache
+          const safetyResult = await checkURLSafety(bookmark.url, backgroundScanState.bypassCache);
           result.safetyStatus = safetyResult.status;
           result.safetySources = safetyResult.sources;
         }
 
         backgroundScanState.scannedCount++;
-
-        // Notify UI of progress
-        chrome.runtime.sendMessage({
-          type: 'scanProgress',
-          scanned: backgroundScanState.scannedCount,
-          total: backgroundScanState.totalBookmarks,
-          result: result
-        }).catch(() => {}); // Ignore if no listeners
+        
+        // Instead of sending message here, queue the result
+        queueResult(result);
 
         return result;
       } catch (error) {
         console.error(`[Background Scan] Error checking bookmark ${bookmark.id}:`, error);
         backgroundScanState.scannedCount++;
-        return {
+        const errorResult = {
           id: bookmark.id,
           url: bookmark.url,
           title: bookmark.title,
@@ -1608,16 +1772,28 @@ async function processBackgroundScanQueue() {
           safetyStatus: 'unknown',
           safetySources: []
         };
+        queueResult(errorResult);
+        return errorResult;
       }
     });
 
     await Promise.all(checkPromises);
+
+    // After a batch is processed, send a progress update
+    chrome.runtime.sendMessage({
+      type: 'scanProgress',
+      scanned: backgroundScanState.scannedCount,
+      total: backgroundScanState.totalBookmarks,
+    }).catch(() => {});
 
     // Wait before next batch
     if (backgroundScanState.bookmarksQueue.length > 0) {
       await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
     }
   }
+
+  // Final flush for any remaining results
+  queueResult(null);
 
   // Scan complete or cancelled
   const wasCancelled = backgroundScanState.isCancelled;

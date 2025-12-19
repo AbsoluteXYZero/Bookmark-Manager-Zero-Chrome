@@ -2324,6 +2324,70 @@ let visibleBookmarks = []; // Flat list of visible bookmarks for keyboard naviga
 let multiSelectMode = false; // Toggle for multi-select mode
 let selectedItems = new Set(); // IDs of selected bookmarks/folders
 
+// ============================================================================
+// CENTRALIZED STATUS MANAGEMENT
+// ============================================================================
+
+// Track active operations to prevent race conditions
+let activeOperations = new Set(); // Set of active operation IDs
+let operationDetails = new Map(); // Map of operation ID to details
+
+// Centralized function to set scanning status
+function setScanningStatus(operationId, message) {
+  activeOperations.add(operationId);
+  operationDetails.set(operationId, message);
+
+  // Update UI
+  if (scanStatusBar) scanStatusBar.classList.add('scanning');
+  if (scanProgress) scanProgress.textContent = message;
+
+  console.log(`[Status] Started: ${operationId} - "${message}"`);
+}
+
+// Centralized function to clear scanning status for a specific operation
+function clearScanningStatus(operationId) {
+  if (activeOperations.has(operationId)) {
+    activeOperations.delete(operationId);
+    operationDetails.delete(operationId);
+
+    console.log(`[Status] Completed: ${operationId}`);
+
+    // Update UI immediately after clearing operation
+    updateStatusBar();
+
+    console.log(`[Status] ${activeOperations.size} operations remaining`);
+  }
+}
+
+// Separate function to update status bar UI
+function updateStatusBar() {
+  if (activeOperations.size === 0) {
+    // No active operations - reset to "Ready"
+    if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+    if (scanProgress) scanProgress.textContent = 'Ready';
+    console.log(`[Status] All operations complete - Status reset to "Ready"`);
+  } else {
+    // Show the most recent active operation
+    if (scanStatusBar) scanStatusBar.classList.add('scanning');
+    const remainingOps = Array.from(activeOperations);
+    const currentOp = remainingOps[remainingOps.length - 1]; // Show the most recent
+    const currentMessage = operationDetails.get(currentOp);
+    if (scanProgress) scanProgress.textContent = currentMessage;
+    console.log(`[Status] ${remainingOps.length} operations still active - Current: "${currentMessage}"`);
+  }
+}
+
+// Enhanced function to ensure status bar is properly reset when all operations complete
+function ensureStatusBarReady() {
+  // Check if there are any active operations
+  if (activeOperations.size === 0) {
+    // Force reset to "Ready" state
+    if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+    if (scanProgress) scanProgress.textContent = 'Ready';
+    console.log(`[Status] Forced reset to "Ready" state`);
+  }
+}
+
 // Track open menus to preserve state across re-renders
 let openMenuBookmarkId = null;
 
@@ -2474,36 +2538,27 @@ async function syncBackgroundScanStatus() {
   }
 }
 
-// Setup listener for blocklist download progress messages from background script
+//// Setup listener for blocklist download and background scan progress messages from background script
 function setupBlocklistProgressListener() {
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'blocklistProgress') {
-      // Update status bar with download progress
-      if (scanProgress && message.status === 'starting') {
-        scanProgress.textContent = 'Downloading blocklists...';
-        if (scanStatusBar) scanStatusBar.classList.add('scanning');
-      } else if (scanProgress && message.status === 'downloading') {
-        scanProgress.textContent = `Downloading blocklists... (${message.current}/${message.total})`;
-        if (scanStatusBar) scanStatusBar.classList.add('scanning');
+      // Update status bar with download progress using centralized system
+      if (message.status === 'starting') {
+        setScanningStatus('blocklist-download', 'Downloading blocklists...');
+      } else if (message.status === 'downloading') {
+        setScanningStatus('blocklist-download', `Downloading blocklists... (${message.current}/${message.total})`);
       }
       console.log(`[Blocklist Progress] ${message.current}/${message.total}${message.sourceName ? ` - ${message.sourceName}` : ''}`);
     } else if (message.type === 'blocklistComplete') {
-      // Clear status bar after completion
-      if (scanProgress) {
-        scanProgress.textContent = `Blocklists loaded: ${message.domains.toLocaleString()} domains`;
-        setTimeout(() => {
-          if (scanProgress && scanProgress.textContent.startsWith('Blocklists loaded:')) {
-            scanProgress.textContent = 'Ready';
-          }
-        }, 3000); // Show completion message for 3 seconds
-      }
-      if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+      // Clear blocklist download operation
+      clearScanningStatus('blocklist-download');
+
       console.log(`[Blocklist Complete] ${message.domains.toLocaleString()} unique domains from ${message.totalEntries.toLocaleString()} entries (${message.sources} sources)`);
     }
     // Background scan messages
     else if (message.type === 'scanStarted') {
       console.log(`[Background Scan] Started - ${message.total} bookmarks`);
-      if (scanProgress) scanProgress.textContent = `Scanning: 0/${message.total}`;
+      setScanningStatus('background-scan', `Scanning: 0/${message.total}`);
 
       // Show stop button, hide rescan button
       const stopBtn = document.getElementById('stopScanBtn');
@@ -2511,33 +2566,31 @@ function setupBlocklistProgressListener() {
       if (stopBtn) stopBtn.style.display = 'flex';
       if (rescanBtn) rescanBtn.style.display = 'none';
     } else if (message.type === 'scanProgress') {
-      // Update progress in status bar
-      if (scanProgress) {
-        scanProgress.textContent = `Scanning: ${message.scanned}/${message.total}`;
-      }
+      // Update progress in status bar using centralized system
+      setScanningStatus('background-scan', `Scanning: ${message.scanned}/${message.total}`);
 
-      // Update the bookmark in the tree with scan results
-      if (message.result) {
+    } else if (message.type === 'scanBatchComplete') {
+      // Process a batch of results
+      const results = message.results || [];
+      console.log(`[Background Scan] Received batch of ${results.length} results.`);
+      results.forEach(result => {
         const updates = {};
-        if (message.result.linkStatus) {
-          updates.linkStatus = message.result.linkStatus;
+        if (result.linkStatus) {
+          updates.linkStatus = result.linkStatus;
         }
-        if (message.result.safetyStatus) {
-          updates.safetyStatus = message.result.safetyStatus;
-          updates.safetySources = message.result.safetySources || [];
+        if (result.safetyStatus) {
+          updates.safetyStatus = result.safetyStatus;
+          updates.safetySources = result.safetySources || [];
         }
+        updateBookmarkInTree(result.id, updates);
+      });
+      
+      // Re-render after processing the batch
+      renderBookmarks();
 
-        updateBookmarkInTree(message.result.id, updates);
-
-        // Re-render if the bookmark is currently visible
-        const bookmarkElement = document.querySelector(`[data-id="${message.result.id}"]`);
-        if (bookmarkElement) {
-          renderBookmarks();
-        }
-      }
     } else if (message.type === 'scanComplete') {
       console.log(`[Background Scan] Complete - ${message.scanned}/${message.total} bookmarks scanned`);
-      if (scanProgress) scanProgress.textContent = 'Ready';
+      clearScanningStatus('background-scan');
 
       // Show rescan button, hide stop button
       const stopBtn = document.getElementById('stopScanBtn');
@@ -2546,7 +2599,7 @@ function setupBlocklistProgressListener() {
       if (rescanBtn) rescanBtn.style.display = 'flex';
     } else if (message.type === 'scanCancelled') {
       console.log(`[Background Scan] Cancelled - ${message.scanned}/${message.total} bookmarks scanned`);
-      if (scanProgress) scanProgress.textContent = 'Ready';
+      clearScanningStatus('background-scan');
 
       // Show rescan button, hide stop button
       const stopBtn = document.getElementById('stopScanBtn');
@@ -3363,7 +3416,8 @@ async function scanAllBookmarksForced() {
   // Mark these bookmarks as being checked
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
 
-  // Show stop button, hide rescan button
+  // Add scanning class and show stop button, hide rescan button
+  if (scanStatusBar) scanStatusBar.classList.add('scanning');
   const stopBtn = document.getElementById('stopScanBtn');
   const rescanBtn = document.getElementById('rescanAllBtn');
   if (stopBtn) stopBtn.style.display = 'flex';
@@ -3377,7 +3431,7 @@ async function scanAllBookmarksForced() {
   const totalToScan = bookmarksToCheck.length;
   let scannedCount = 0;
   scanCancelled = false; // Reset the cancel flag
-  if (scanProgress) scanProgress.textContent = `Scanning: 0/${totalToScan}`;
+  if (scanProgress) setTimeout(() => scanProgress.textContent = `Scanning: 0/${totalToScan}`, 0);
 
   for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
     if (scanCancelled) {
@@ -3427,7 +3481,7 @@ async function scanAllBookmarksForced() {
     });
 
     scannedCount += results.length;
-    if (scanProgress) scanProgress.textContent = `Scanning: ${scannedCount}/${totalToScan}`;
+    if (scanProgress) setTimeout(() => scanProgress.textContent = `Scanning: ${scannedCount}/${totalToScan}`, 0);
 
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
       await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
@@ -3435,7 +3489,8 @@ async function scanAllBookmarksForced() {
   }
 
   renderBookmarks();
-  if (scanProgress) scanProgress.textContent = scanCancelled ? 'Scan stopped' : 'Scan complete';
+  if (scanProgress) setTimeout(() => scanProgress.textContent = scanCancelled ? 'Scan stopped' : 'Scan complete', 0);
+  if (scanStatusBar) scanStatusBar.classList.remove('scanning');
 
   // Hide stop button, show rescan button
   if (stopBtn) stopBtn.style.display = 'none';
@@ -3446,7 +3501,7 @@ async function scanAllBookmarksForced() {
 
   // Reset status to "Ready" after 2 seconds
   setTimeout(() => {
-    if (scanProgress) scanProgress.textContent = 'Ready';
+    if (scanProgress) setTimeout(() => scanProgress.textContent = 'Ready', 0);
   }, 2000);
 
   console.log(`Finished rescanning ${bookmarksToCheck.length} bookmarks`);
@@ -3482,10 +3537,9 @@ async function autoCheckBookmarkStatuses() {
 
   if (bookmarksToCheck.length === 0) return;
 
-  // Update status bar to show scanning
+  // Update status bar to show scanning using centralized system
   const totalToScan = bookmarksToCheck.length;
-  if (scanStatusBar) scanStatusBar.classList.add('scanning');
-  if (scanProgress) scanProgress.textContent = 'Scanning: 0/' + totalToScan;
+  setScanningStatus('auto-check', `Scanning: 0/${totalToScan}`);
 
   // Mark these bookmarks as being checked to prevent re-checking
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
@@ -3552,7 +3606,7 @@ async function autoCheckBookmarkStatuses() {
 
     // Update progress in status bar
     scannedCount += batch.length;
-    if (scanProgress) scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan;
+    if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
 
     // Wait before processing next batch (except for the last batch)
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
@@ -3564,7 +3618,7 @@ async function autoCheckBookmarkStatuses() {
   renderBookmarks();
 
   // Update status bar to show completion
-  if (scanProgress) scanProgress.textContent = 'Ready';
+  if (scanProgress) setTimeout(() => scanProgress.textContent = 'Ready', 0);
   if (scanStatusBar) scanStatusBar.classList.remove('scanning');
 
   // Clear checkedBookmarks to free memory after scan completes
@@ -5647,7 +5701,7 @@ async function deleteFolder(id) {
   }
 }
 
-// Rescan all bookmarks in a folder and its subfolders
+// Rescan all bookmarks in a folder and its subfolders by delegating to the background service
 async function rescanFolder(folderId, folderTitle) {
   try {
     console.log(`[Folder Rescan] Starting rescan for folder: ${folderTitle} (${folderId})`);
@@ -5656,14 +5710,11 @@ async function rescanFolder(folderId, folderTitle) {
     const bookmarks = [];
     const collectBookmarks = async (nodeId) => {
       const nodes = await chrome.bookmarks.getChildren(nodeId);
-      console.log(`[Folder Rescan] Scanning node ${nodeId}, found ${nodes.length} children`);
       for (const node of nodes) {
-        console.log(`[Folder Rescan]   - Node ${node.id}: url=${!!node.url}, title="${node.title}", type=${node.type}, hasChildren=${!!node.children}`);
         if (node.url) {
           bookmarks.push(node);
         } else if (!node.url) {
           // If it doesn't have a URL, it's a folder - recurse into it
-          console.log(`[Folder Rescan]   - Recursing into folder ${node.id} ("${node.title}")`);
           await collectBookmarks(node.id);
         }
       }
@@ -5672,7 +5723,7 @@ async function rescanFolder(folderId, folderTitle) {
     await collectBookmarks(folderId);
 
     if (bookmarks.length === 0) {
-      alert(`Folder "${folderTitle}" has no bookmarks to scan.`);
+      alert(`Folder "${folderTitle}" contains no bookmarks to scan.`);
       return;
     }
 
@@ -5684,168 +5735,23 @@ async function rescanFolder(folderId, folderTitle) {
       return;
     }
 
-    // Expand the rescanned folder and all its subfolders FIRST so icons can update live
-    const expandFolderTree = (nodeId) => {
-      expandedFolders.add(nodeId);
-      const node = findFolderById(nodeId, bookmarkTree);
-      if (node && node.children) {
-        node.children.forEach(child => {
-          if (child.type === 'folder' || child.children) {
-            expandFolderTree(child.id);
-          }
-        });
-      }
-    };
-    expandFolderTree(folderId);
-    renderBookmarks(); // Initial render with folders expanded
-
-    // Wait for DOM to update before starting scan
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Update status bar to show scanning
-    if (scanStatusBar) scanStatusBar.classList.add('scanning');
-    if (scanProgress) scanProgress.textContent = `Preparing scan...`;
-
-    // Ensure blocklist database is ready (triggers update if needed, then waits for completion)
-    // This prevents getting 'unknown' results during database download
-    try {
-      if (scanProgress) scanProgress.textContent = `Loading security database...`;
-      console.log('[Folder Rescan] Ensuring blocklist database is ready...');
-
-      const response = await chrome.runtime.sendMessage({ action: 'ensureBlocklistReady' });
-
-      console.log(`[Folder Rescan] Blocklist ready with ${response.size} domains`);
-    } catch (error) {
-      console.warn('[Folder Rescan] Could not ensure blocklist is ready:', error);
-    }
-
-    if (scanProgress) scanProgress.textContent = `Scanning folder: 0/${bookmarks.length}`;
-
-    // Track statistics
-    let scanned = 0;
-    let unsafe = 0;
-    let warning = 0;
-    let dead = 0;
-
-    // Process bookmarks in batches to avoid overwhelming the background service
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < bookmarks.length; i += BATCH_SIZE) {
-      const batch = bookmarks.slice(i, i + BATCH_SIZE);
-
-      // Process each bookmark in the batch
-      const batchPromises = batch.map(async (bookmark) => {
-        try {
-          // Check safety status (bypass cache for folder rescan)
-          const safetyResult = await chrome.runtime.sendMessage({
-            action: 'checkURLSafety',
-            url: bookmark.url,
-            bypassCache: true
-          });
-
-          // Check link status (bypass cache for folder rescan)
-          const linkResult = await chrome.runtime.sendMessage({
-            action: 'checkLinkStatus',
-            url: bookmark.url,
-            bypassCache: true
-          });
-
-          // Update the bookmark tree with the results so they persist
-          updateBookmarkInTree(bookmark.id, {
-            linkStatus: linkResult?.status || 'unknown',
-            safetyStatus: safetyResult?.status || 'unknown',
-            safetySources: safetyResult?.sources || []
-          });
-
-          // Track statistics
-          if (safetyResult) {
-            if (safetyResult.status === 'unsafe') unsafe++;
-            if (safetyResult.status === 'warning') warning++;
-          }
-
-          if (linkResult) {
-            if (linkResult.status === 'dead' || linkResult.status === 'parked') dead++;
-          }
-
-          scanned++;
-        } catch (error) {
-          console.error(`[Folder Rescan] Error checking bookmark ${bookmark.id}:`, error);
-        }
-      });
-
-      // Wait for batch to complete
-      await Promise.all(batchPromises);
-
-      // Update UI after each batch to show progress
-      renderBookmarks();
-
-      // Update status bar with progress
-      const progress = Math.min(scanned, bookmarks.length);
-      if (scanProgress) scanProgress.textContent = `Scanning folder: ${progress}/${bookmarks.length}`;
-
-      // Add delay between batches to avoid overwhelming background service
-      if (i + BATCH_SIZE < bookmarks.length) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-      }
-    }
-
-    // Save the updated folder scan timestamp
-    saveFolderScanTimestamp(folderId);
-
-    // Mark all rescanned bookmarks as checked so they won't be auto-scanned again
-    bookmarks.forEach(bookmark => {
-      checkedBookmarks.add(bookmark.id);
+    // Delegate the entire scan to the background script
+    console.log(`[Folder Rescan] Delegating scan of ${bookmarks.length} bookmarks to background script.`);
+    await chrome.runtime.sendMessage({
+      action: 'startBackgroundScan',
+      bookmarks: bookmarks,
+      bypassCache: true
     });
 
-    // Debug: Log the tree data for all scanned bookmarks
-    console.log('[Folder Rescan] Tree data after scan:');
-    bookmarks.forEach(bookmark => {
-      const findBookmark = (nodes) => {
-        for (const node of nodes) {
-          if (node.id === bookmark.id) return node;
-          if (node.children) {
-            const found = findBookmark(node.children);
-            if (found) return found;
-          }
-        }
-        return null;
-      };
-      const bookmarkData = findBookmark(bookmarkTree);
-      console.log(`  [${bookmark.id}] ${bookmark.title}:`, {
-        linkStatus: bookmarkData?.linkStatus,
-        safetyStatus: bookmarkData?.safetyStatus,
-        hasData: !!bookmarkData
-      });
-    });
-
-    // Re-render everything to show updated icons
-    console.log('[Folder Rescan] Calling renderBookmarks()...');
-    renderBookmarks();
-    console.log('[Folder Rescan] renderBookmarks() completed');
-
-    // Update status bar to show completion
-    if (scanStatusBar) scanStatusBar.classList.remove('scanning');
-    if (scanProgress) scanProgress.textContent = `Scan complete: ${scanned}/${bookmarks.length}`;
-
-    // Clear checkedBookmarks to free memory after folder scan completes
-    checkedBookmarks.clear();
-
-    // Show summary
-    const summary = [
-      `Rescan complete for "${folderTitle}"!`,
-      ``,
-      `📊 Scanned: ${scanned} bookmark(s)`,
-      `🛡️ Unsafe: ${unsafe}`,
-      `⚠️ Warnings: ${warning}`,
-      `🔗 Dead links: ${dead}`,
-      `✅ Safe: ${scanned - unsafe - warning}`
-    ].join('\n');
-
-    alert(summary);
-    console.log(`[Folder Rescan] Complete: ${scanned} scanned, ${unsafe} unsafe, ${warning} warnings, ${dead} dead`);
+    // The UI will now be updated by the same message listeners used for a full background scan
+    // ('scanStarted', 'scanBatchComplete', 'scanProgress', 'scanComplete')
 
   } catch (error) {
     console.error('[Folder Rescan] Error:', error);
     alert(`Failed to rescan folder: ${error.message}`);
+    // Ensure status bar is reset on error
+    if (scanStatusBar) scanStatusBar.classList.remove('scanning');
+    if (scanProgress) scanProgress.textContent = 'Ready';
   }
 }
 
@@ -6251,6 +6157,35 @@ function updateBookmarkInTree(bookmarkId, updates) {
     });
   };
   bookmarkTree = updateNode(bookmarkTree);
+}
+
+// Update status indicators in DOM for a specific bookmark (without full re-render)
+function updateBookmarkStatusInDOM(bookmarkId, linkStatus, safetyStatus, safetySources, url) {
+  const bookmarkElement = document.querySelector(`.bookmark-item[data-id="${bookmarkId}"]`);
+  if (!bookmarkElement) return;
+
+  const statusIndicators = bookmarkElement.querySelector('.status-indicators');
+  if (!statusIndicators) return;
+
+  // Rebuild the status indicators HTML
+  // Shield (safety) on top, chain (link status) below
+  let statusIndicatorsHtml = '';
+  if (displayOptions.safetyStatus && safetyStatus) {
+    statusIndicatorsHtml += getShieldHtml(safetyStatus, url, safetySources);
+  }
+  if (displayOptions.liveStatus && linkStatus) {
+    statusIndicatorsHtml += getStatusDotHtml(linkStatus, url);
+  }
+
+  statusIndicators.innerHTML = statusIndicatorsHtml;
+
+// FORCE IMMEDIATE DOM REFLOW to ensure visual update and prevent race condition
+statusIndicators.offsetHeight; // Trigger layout calculation
+
+// Additional safeguard: force style recalculation on the parent element
+bookmarkElement.style.display = 'flex';
+bookmarkElement.offsetHeight; // Force complete reflow
+bookmarkElement.style.display = '';
 }
 
 // Whitelist a bookmark (trust it regardless of safety checks)
@@ -7873,10 +7808,32 @@ async function clearCache() {
   }
 
   try {
-    // Remove both cache keys from storage
+    // Clear storage cache (current)
     await safeStorage.remove(['linkStatusCache', 'safetyStatusCache']);
 
-    alert('Cache cleared! All bookmark checks will be refreshed on next scan.');
+    // ALSO CLEAR: Reset in-memory bookmark statuses
+    function resetStatuses(nodes) {
+      nodes.forEach(node => {
+        if (node.url) {
+          node.linkStatus = 'unknown';
+          node.safetyStatus = 'unknown';
+          node.safetySources = [];
+        }
+        if (node.children) resetStatuses(node.children);
+      });
+    }
+    resetStatuses(bookmarkTree);
+
+    // Re-render to show cleared states
+    renderBookmarks();
+
+    // Clear IndexedDB cache too (if scanner service available)
+    if (window.scannerService && window.scannerService.clearAllCache) {
+      await window.scannerService.clearAllCache();
+    }
+
+    console.log('Cache cleared successfully');
+    alert('Cache cleared! Status indicators reset to unknown.');
 
     // Update cache size display
     await updateCacheSizeDisplay();
