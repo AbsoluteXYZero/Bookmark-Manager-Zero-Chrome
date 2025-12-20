@@ -344,119 +344,8 @@ async function encryptApiKey(plaintext) {
 }
 
 // ============================================================================
-// GITHUB GIST AUTHENTICATION & SYNC
+// SHARED UTILITY FUNCTIONS (used by GitLab Snippets)
 // ============================================================================
-
-// Gist sync state
-let gistToken = null;
-let gistId = null;
-let gistSyncEnabled = false;
-let gistSyncInterval = null;
-let gistDeviceId = null;
-let gistIsSyncing = false;
-let gistLocalVersion = 0;
-let gistLastSyncTime = null;
-
-// Get or create device ID for sync locking
-function getGistDeviceId() {
-  if (!gistDeviceId) {
-    gistDeviceId = localStorage.getItem('bmz_device_id');
-    if (!gistDeviceId) {
-      gistDeviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem('bmz_device_id', gistDeviceId);
-    }
-  }
-  return gistDeviceId;
-}
-
-// Encrypt and store GitHub token
-async function storeGistToken(token) {
-  const encrypted = await encryptApiKey(token);
-  await chrome.storage.local.set({ github_gist_token: encrypted });
-  gistToken = token;
-  console.log('GitHub token stored securely');
-}
-
-// Retrieve and decrypt GitHub token
-async function loadGistToken() {
-  const result = await chrome.storage.local.get(['github_gist_token']);
-  if (!result.github_gist_token) return null;
-  gistToken = await decryptApiKey(result.github_gist_token);
-  return gistToken;
-}
-
-// Clear GitHub token
-async function clearGistToken() {
-  await chrome.storage.local.remove(['github_gist_token']);
-  gistToken = null;
-  console.log('GitHub token cleared');
-}
-
-// Get GitHub API headers
-function getGistHeaders() {
-  if (!gistToken) {
-    throw new Error('No GitHub token available');
-  }
-  return {
-    'Authorization': `token ${gistToken}`,
-    'Accept': 'application/vnd.github.v3+json',
-    'Content-Type': 'application/json'
-  };
-}
-
-// Validate GitHub token
-async function validateGistToken() {
-  try {
-    const response = await fetch('https://api.github.com/user', {
-      headers: getGistHeaders()
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub API error: ${response.status}`);
-    }
-    const user = await response.json();
-    console.log('GitHub token validated for user:', user.login);
-    return user;
-  } catch (error) {
-    console.error('Token validation failed:', error);
-    return null;
-  }
-}
-
-// Get all user's gists
-async function getAllGists() {
-  try {
-    const response = await fetch('https://api.github.com/gists', {
-      headers: getGistHeaders()
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch gists: ${response.status}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Failed to fetch gists:', error);
-    throw error;
-  }
-}
-
-// Find bookmark gist
-async function findBookmarkGist() {
-  try {
-    const gists = await getAllGists();
-    const bookmarkGist = gists.find(g =>
-      g.files['bookmarks.json'] ||
-      g.description?.includes('BMZ') ||
-      g.description?.includes('Bookmark Manager Zero')
-    );
-    if (bookmarkGist) {
-      console.log('Found bookmark Gist:', bookmarkGist.id);
-      return bookmarkGist.id;
-    }
-    return null;
-  } catch (error) {
-    console.error('Failed to find bookmark Gist:', error);
-    throw error;
-  }
-}
 
 // Calculate SHA-256 checksum
 async function calculateChecksum(data) {
@@ -469,8 +358,8 @@ async function calculateChecksum(data) {
     .join('');
 }
 
-// Convert Chrome bookmarks to Gist format
-async function chromeBookmarksToGistFormat(chromeTree) {
+// Convert Chrome bookmarks to Snippet format
+async function chromeBookmarksToSnippetFormat(chromeTree) {
   const convertNode = (node) => {
     if (node.url) {
       // Bookmark
@@ -522,126 +411,18 @@ async function chromeBookmarksToGistFormat(chromeTree) {
     children: []
   };
 
-  const gistData = {
+  const snippetData = {
     version: 1,
     checksum: '',
     lastModified: Date.now(),
     roots: roots
   };
 
-  gistData.checksum = await calculateChecksum(gistData);
-  return gistData;
+  snippetData.checksum = await calculateChecksum(snippetData);
+  return snippetData;
 }
 
-// Create new bookmark gist
-async function createBookmarkGist(bookmarkTree = null) {
-  try {
-    let tree = bookmarkTree;
 
-    // If no tree provided, get current Chrome bookmarks
-    if (!tree) {
-      const chromeTree = await chrome.bookmarks.getTree();
-      tree = await chromeBookmarksToGistFormat(chromeTree);
-    }
-
-    const response = await fetch('https://api.github.com/gists', {
-      method: 'POST',
-      headers: getGistHeaders(),
-      body: JSON.stringify({
-        description: 'BMZ Bookmarks - Managed by Bookmark Manager Zero',
-        public: false,
-        files: {
-          'bookmarks.json': {
-            content: JSON.stringify(tree, null, 2)
-          }
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to create Gist: ${response.status}`);
-    }
-
-    const gist = await response.json();
-    gistId = gist.id;
-    await chrome.storage.local.set({ bmz_gist_id: gistId });
-    console.log('Created bookmark Gist:', gistId);
-    return gist.id;
-  } catch (error) {
-    console.error('Failed to create bookmark Gist:', error);
-    throw error;
-  }
-}
-
-// Read bookmarks from gist
-async function readBookmarksFromGist(id = null) {
-  const useId = id || gistId;
-  if (!useId) {
-    throw new Error('No Gist ID provided');
-  }
-
-  try {
-    const response = await fetch(`https://api.github.com/gists/${useId}`, {
-      headers: getGistHeaders()
-    });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error('Bookmark Gist not found');
-      }
-      throw new Error(`Failed to read Gist: ${response.status}`);
-    }
-
-    const gist = await response.json();
-    if (!gist.files['bookmarks.json']) {
-      throw new Error('Gist does not contain bookmarks.json');
-    }
-
-    const content = gist.files['bookmarks.json'].content;
-    return JSON.parse(content);
-  } catch (error) {
-    console.error('Failed to read bookmarks from Gist:', error);
-    throw error;
-  }
-}
-
-// Update bookmarks in gist
-async function updateBookmarksInGist(bookmarkTree, version = null) {
-  if (!gistId) {
-    throw new Error('No Gist ID provided');
-  }
-
-  try {
-    const dataWithMeta = {
-      ...bookmarkTree,
-      version: version !== null ? version : (bookmarkTree.version || 1) + 1,
-      checksum: await calculateChecksum(bookmarkTree),
-      lastModified: Date.now()
-    };
-
-    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: getGistHeaders(),
-      body: JSON.stringify({
-        files: {
-          'bookmarks.json': {
-            content: JSON.stringify(dataWithMeta, null, 2)
-          }
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to update Gist: ${response.status}`);
-    }
-
-    console.log('Updated bookmarks in Gist:', gistId);
-    return await response.json();
-  } catch (error) {
-    console.error('Failed to update bookmarks in Gist:', error);
-    throw error;
-  }
-}
 
 // ============================================================================
 // GitLab Snippet Functions
@@ -654,6 +435,8 @@ let snippetSyncInterval = null;
 let snippetLastSyncTime = 0;
 let snippetIsSyncing = false;
 let snippetLocalVersion = 0;
+let snippetPushDebounceTimer = null;
+let snippetMinSyncInterval = 60000; // Minimum 60 seconds between syncs to avoid abuse detection
 
 // Encrypt and store GitLab token
 async function storeSnippetToken(token) {
@@ -751,7 +534,7 @@ async function createBookmarkSnippet(bookmarkTree = null) {
     // If no tree provided, get current Chrome bookmarks
     if (!tree) {
       const chromeTree = await chrome.bookmarks.getTree();
-      tree = await chromeBookmarksToGistFormat(chromeTree);
+      tree = await chromeBookmarksToSnippetFormat(chromeTree);
     }
 
     const response = await fetch('https://gitlab.com/api/v4/snippets', {
@@ -934,269 +717,10 @@ async function getDecryptedApiKey(keyName) {
   return null;
 }
 
-// Open Gist sync dialog
-async function openGistSyncDialog() {
-  // Check if already authenticated
-  await loadGistToken();
 
-  const modal = document.createElement('div');
-  modal.id = 'gistSyncModal';
-  modal.className = 'modal';
-  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
-
-  const dialog = document.createElement('div');
-  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
-
-  if (gistToken) {
-    // Already authenticated - show sync options
-    dialog.innerHTML = `
-      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitHub Gist Sync</h2>
-      <p style="margin: 0 0 20px 0; color: var(--md-sys-color-on-surface-variant, #aaa);">
-        ${gistId ? 'Connected to Gist: <code style="font-size: 11px;">' + gistId + '</code>' : 'Not connected to any Gist'}
-      </p>
-      <div style="display: flex; flex-direction: column; gap: 12px;">
-        ${gistId ? `
-          <button id="syncFromGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
-            ⬇️ Sync from Gist to Browser
-          </button>
-          <button id="syncToGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-tertiary-container, #2a2a2a); color: var(--md-sys-color-on-tertiary-container, #d0bcff); cursor: pointer; font-size: 14px;">
-            ⬆️ Sync from Browser to Gist
-          </button>
-          <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 8px 0;">
-        ` : ''}
-        <button id="createNewGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
-          Create New Gist with Current Bookmarks
-        </button>
-        <button id="selectExistingGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
-          Select Existing Gist
-        </button>
-        <button id="disconnectGist" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
-          Disconnect & Remove Token
-        </button>
-        <button id="cancelGistDialog" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
-          Cancel
-        </button>
-      </div>
-    `;
-  } else {
-    // Not authenticated - show login
-    dialog.innerHTML = `
-      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitHub Gist Sync Setup</h2>
-      <p style="margin: 0 0 16px 0; color: var(--md-sys-color-on-surface-variant, #aaa); font-size: 14px;">
-        To enable Gist sync, you need a GitHub Personal Access Token with  'gist' permissions.
-      </p>
-      <a href="https://github.com/settings/tokens/new?scopes=gist&description=Bookmark%20Manager%20Zero" target="_blank" style="display: inline-block; margin-bottom: 16px; padding: 8px 16px; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); text-decoration: none; border-radius: 8px; font-size: 13px;">
-        Create Token on GitHub →
-      </a>
-      <div style="margin-bottom: 16px;">
-        <label style="display: block; margin-bottom: 8px; font-size: 14px;">Personal Access Token:</label>
-        <input type="password" id="githubTokenInput" placeholder="ghp_xxxxxxxxxxxx" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); font-size: 14px; box-sizing: border-box;">
-      </div>
-      <div style="display: flex; gap: 12px;">
-        <button id="saveGistToken" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px;">
-          Save & Continue
-        </button>
-        <button id="cancelGistDialog" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
-          Cancel
-        </button>
-      </div>
-    `;
-  }
-
-  modal.appendChild(dialog);
-  document.body.appendChild(modal);
-
-  // Event listeners
-  const cancelBtn = dialog.querySelector('#cancelGistDialog');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => modal.remove());
-  }
-
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) modal.remove();
-  });
-
-  if (gistToken) {
-    // Authenticated state event listeners
-    const syncFromGistBtn = dialog.querySelector('#syncFromGist');
-    if (syncFromGistBtn) {
-      syncFromGistBtn.addEventListener('click', async () => {
-        modal.remove();
-        await syncFromGist();
-      });
-    }
-
-    const syncToGistBtn = dialog.querySelector('#syncToGist');
-    if (syncToGistBtn) {
-      syncToGistBtn.addEventListener('click', async () => {
-        modal.remove();
-        await syncToGist();
-      });
-    }
-
-    const createNewBtn = dialog.querySelector('#createNewGist');
-    if (createNewBtn) {
-      createNewBtn.addEventListener('click', async () => {
-        modal.remove();
-        await handleCreateNewGist();
-      });
-    }
-
-    const selectExistingBtn = dialog.querySelector('#selectExistingGist');
-    if (selectExistingBtn) {
-      selectExistingBtn.addEventListener('click', async () => {
-        modal.remove();
-        await handleSelectExistingGist();
-      });
-    }
-
-    const disconnectBtn = dialog.querySelector('#disconnectGist');
-    if (disconnectBtn) {
-      disconnectBtn.addEventListener('click', async () => {
-        if (confirm('Are you sure you want to disconnect and remove your GitHub token?')) {
-          await clearGistToken();
-          await chrome.storage.local.remove(['bmz_gist_id']);
-          gistId = null;
-          modal.remove();
-          showToast('GitHub token removed');
-        }
-      });
-    }
-  } else {
-    // Not authenticated state event listeners
-    const saveBtn = dialog.querySelector('#saveGistToken');
-    const tokenInput = dialog.querySelector('#githubTokenInput');
-
-    if (saveBtn && tokenInput) {
-      saveBtn.addEventListener('click', async () => {
-        const token = tokenInput.value.trim();
-        if (!token) {
-          showToast('Please enter a valid token', 'error');
-          return;
-        }
-
-        // Store token temporarily to validate
-        gistToken = token;
-
-        // Validate token
-        const user = await validateGistToken();
-        if (!user) {
-          gistToken = null;
-          showToast('Invalid token. Please check and try again.', 'error');
-          return;
-        }
-
-        // Store token securely
-        await storeGistToken(token);
-        showToast(`Authenticated as ${user.login}`);
-        modal.remove();
-
-        // Open sync options
-        await openGistSyncDialog();
-      });
-
-      tokenInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-          saveBtn.click();
-        }
-      });
-
-      // Auto-focus token input
-      setTimeout(() => tokenInput.focus(), 100);
-    }
-  }
-}
-
-// Handle creating a new Gist with current bookmarks
-async function handleCreateNewGist() {
-  try {
-    showToast('Creating Gist with current bookmarks...');
-
-    const chromeTree = await chrome.bookmarks.getTree();
-    const gistData = await chromeBookmarksToGistFormat(chromeTree);
-    const newGistId = await createBookmarkGist(gistData);
-
-    gistId = newGistId;
-    await chrome.storage.local.set({ bmz_gist_id: gistId });
-
-    showToast('Gist created successfully!');
-  } catch (error) {
-    console.error('Failed to create Gist:', error);
-    showToast(`Error: ${error.message}`, 'error');
-  }
-}
-
-// Handle selecting an existing Gist
-async function handleSelectExistingGist() {
-  try {
-    showToast('Loading your Gists...');
-    const gists = await getAllGists();
-
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
-
-    const dialog = document.createElement('div');
-    dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
-
-    let gistList = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Select a Gist</h2>';
-
-    if (gists.length === 0) {
-      gistList += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No Gists found. Create a new one instead.</p>';
-    } else {
-      gistList += '<div style="display: flex; flex-direction: column; gap: 8px;">';
-      gists.forEach(gist => {
-        const files = Object.keys(gist.files).join(', ');
-        const isBMZ = gist.files['bookmarks.json'] || gist.description?.includes('BMZ');
-        gistList += `
-          <button class="select-gist-btn" data-gist-id="${gist.id}" style="padding: 12px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); cursor: pointer; text-align: left; font-size: 13px;">
-            <div style="font-weight: 500; margin-bottom: 4px;">${gist.description || 'Untitled Gist'} ${isBMZ ? '<span style="color: var(--md-sys-color-primary, #818cf8);">[BMZ]</span>' : ''}</div>
-            <div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant, #aaa);">Files: ${files}</div>
-            <div style="font-size: 10px; color: var(--md-sys-color-on-surface-variant, #888); margin-top: 4px;">ID: ${gist.id}</div>
-          </button>
-        `;
-      });
-      gistList += '</div>';
-    }
-
-    gistList += `
-      <button id="cancelSelectGist" style="margin-top: 16px; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; width: 100%;">
-        Cancel
-      </button>
-    `;
-
-    dialog.innerHTML = gistList;
-    modal.appendChild(dialog);
-    document.body.appendChild(modal);
-
-    // Event listeners
-    const selectBtns = dialog.querySelectorAll('.select-gist-btn');
-    selectBtns.forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const selectedGistId = btn.dataset.gistId;
-        gistId = selectedGistId;
-        await chrome.storage.local.set({ bmz_gist_id: gistId });
-        modal.remove();
-        showToast('Gist connected: ' + gistId);
-      });
-    });
-
-    const cancelBtn = dialog.querySelector('#cancelSelectGist');
-    if (cancelBtn) {
-      cancelBtn.addEventListener('click', () => modal.remove());
-    }
-
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.remove();
-    });
-  } catch (error) {
-    console.error('Failed to load Gists:', error);
-    showToast(`Error: ${error.message}`, 'error');
-  }
-}
 
 // ============================================================================
-// GitLab Snippet Sync Dialog (mirrors Gist sync dialog)
+// GitLab Snippet Sync Dialog (mirrors Snippet sync dialog)
 // ============================================================================
 
 // Open GitLab Snippet sync dialog
@@ -1319,6 +843,7 @@ async function openSnippetSyncDialog() {
     if (disconnectBtn) {
       disconnectBtn.addEventListener('click', async () => {
         if (confirm('Are you sure you want to disconnect and remove your GitLab token?')) {
+          stopSnippetAutoSync();
           await clearSnippetToken();
           await chrome.storage.local.remove(['bmz_snippet_id']);
           snippetId = null;
@@ -1354,6 +879,7 @@ async function openSnippetSyncDialog() {
         // Store token securely
         await storeSnippetToken(token);
         showToast(`Authenticated as ${user.username}`);
+        updateGitLabButtonIcon();
         modal.remove();
 
         // Open sync options
@@ -1378,11 +904,12 @@ async function handleCreateNewSnippet() {
     showToast('Creating Snippet with current bookmarks...');
 
     const chromeTree = await chrome.bookmarks.getTree();
-    const snippetData = await chromeBookmarksToGistFormat(chromeTree);
+    const snippetData = await chromeBookmarksToSnippetFormat(chromeTree);
     const newSnippetId = await createBookmarkSnippet(snippetData);
 
     snippetId = newSnippetId;
     await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+    updateGitLabButtonIcon();
 
     showToast('Snippet created successfully!');
   } catch (error) {
@@ -1440,6 +967,7 @@ async function handleSelectExistingSnippet() {
         const selectedSnippetId = btn.dataset.snippetId;
         snippetId = selectedSnippetId;
         await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+        updateGitLabButtonIcon();
         modal.remove();
         showToast('Snippet connected: ' + snippetId);
       });
@@ -1459,7 +987,7 @@ async function handleSelectExistingSnippet() {
   }
 }
 
-// Sync from Snippet to Chrome bookmarks (mirrors syncFromGist)
+// Sync from Snippet to Chrome bookmarks (mirrors syncFromSnippet)
 async function syncFromSnippet() {
   if (!snippetId) {
     showToast('No Snippet connected', 'error');
@@ -1472,7 +1000,10 @@ async function syncFromSnippet() {
     const remoteData = await readBookmarksFromSnippet(snippetId);
     const localTree = await chrome.bookmarks.getTree();
 
-    const diff = calculateBookmarkDiff(localTree[0], remoteData);
+    // Convert remote snippet format to Chrome format for proper comparison
+    const remoteTreeAsChromeFormat = snippetFormatToChromeBookmarks(remoteData);
+
+    const diff = calculateBookmarkDiff(localTree[0], remoteTreeAsChromeFormat[0]);
     const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
 
     if (!hasChanges) {
@@ -1480,7 +1011,7 @@ async function syncFromSnippet() {
       return;
     }
 
-    // Show diff dialog (reuse the gist diff dialog with snippet data)
+    // Show diff dialog (reuse the snippet diff dialog with snippet data)
     await showSyncDiffDialog(diff, remoteData);
   } catch (error) {
     console.error('Sync from Snippet failed:', error);
@@ -1488,7 +1019,7 @@ async function syncFromSnippet() {
   }
 }
 
-// Sync from Chrome bookmarks to Snippet (mirrors syncToGist)
+// Sync from Chrome bookmarks to Snippet (mirrors syncToSnippet)
 async function syncToSnippet() {
   if (!snippetId) {
     showToast('No Snippet connected', 'error');
@@ -1499,7 +1030,7 @@ async function syncToSnippet() {
     showToast('Syncing to Snippet...');
 
     const chromeTree = await chrome.bookmarks.getTree();
-    const snippetData = await chromeBookmarksToGistFormat(chromeTree);
+    const snippetData = await chromeBookmarksToSnippetFormat(chromeTree);
 
     await updateBookmarksInSnippet(snippetData);
 
@@ -1512,6 +1043,141 @@ async function syncToSnippet() {
     console.error('Sync to Snippet failed:', error);
     showToast(`Error: ${error.message}`, 'error');
   }
+}
+
+// Start auto-syncing Snippet every 10 minutes
+function startSnippetAutoSync() {
+  if (snippetSyncInterval) {
+    clearInterval(snippetSyncInterval);
+  }
+
+  const syncInterval = 10 * 60 * 1000;
+
+  snippetSyncInterval = setInterval(async () => {
+    if (!snippetId || !snippetToken || !navigator.onLine) {
+      return;
+    }
+
+    try {
+      console.log('[Snippet AutoSync] Running auto-sync...');
+      await syncFromSnippet();
+    } catch (error) {
+      console.error('[Snippet AutoSync] Auto-sync failed:', error);
+    }
+  }, syncInterval);
+
+  console.log('[Snippet AutoSync] Auto-sync enabled (10-minute interval)');
+}
+
+// Stop auto-syncing Snippet
+function stopSnippetAutoSync() {
+  if (snippetSyncInterval) {
+    clearInterval(snippetSyncInterval);
+    snippetSyncInterval = null;
+    console.log('[Snippet AutoSync] Auto-sync disabled');
+  }
+}
+
+// Debounced push sync to Snippet (triggered by local bookmark changes)
+// Waits 30 seconds after last change to batch multiple edits and avoid rate limiting
+// Respects 60-second minimum between consecutive syncs
+function markSnippetChanges() {
+  if (!snippetId || !snippetToken || !navigator.onLine) {
+    return;
+  }
+
+  if (snippetPushDebounceTimer) {
+    clearTimeout(snippetPushDebounceTimer);
+  }
+
+  snippetPushDebounceTimer = setTimeout(async () => {
+    const now = Date.now();
+    const timeSinceLastSync = now - snippetLastSyncTime;
+
+    if (timeSinceLastSync < snippetMinSyncInterval) {
+      const delayMs = snippetMinSyncInterval - timeSinceLastSync;
+      console.log('[SnippetPushSync] Rate limit: waiting', delayMs, 'ms before next sync');
+      snippetPushDebounceTimer = setTimeout(markSnippetChanges, delayMs);
+      return;
+    }
+
+    try {
+      console.log('[SnippetPushSync] Syncing local changes to Snippet...');
+      await syncToSnippet();
+    } catch (error) {
+      console.error('[SnippetPushSync] Failed to sync:', error);
+      // Retry after 5 seconds
+      setTimeout(() => {
+        if (snippetId && snippetToken && navigator.onLine) {
+          console.log('[SnippetPushSync] Retrying sync after 5 seconds...');
+          syncToSnippet().catch(err => {
+            console.error('[SnippetPushSync] Retry failed:', err);
+          });
+        }
+      }, 5000);
+    }
+  }, 30000); // Wait 30 seconds after last change to batch multiple edits
+}
+
+// Show GitLab disconnect dialog
+function updateGitLabButtonIcon() {
+  const gitlabBtnIcon = document.getElementById('gitlabBtnIcon');
+  if (!gitlabBtnIcon) return;
+
+  if (snippetToken && snippetId) {
+    gitlabBtnIcon.innerHTML = '<path d="M13 3H6c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h7v-2H6V5h7V3zm5.6 5.4l-4.6-4.6-.7.7L17 8h-6v1h6l-3.7 3.7.7.7 4.6-4.6-.7-.7z"/>';
+  } else {
+    gitlabBtnIcon.innerHTML = '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>';
+  }
+}
+
+function showGitLabDisconnectDialog() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 400px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 16px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">
+      <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M23.6 7.2L20.2 1.4c-.4-.6-1.1-1-1.8-1-.7 0-1.4.4-1.8 1L14 7.2h-4L7.4 1.4C7 .8 6.3.4 5.6.4S4.2.8 3.8 1.4L.4 7.2c-.4.6-.4 1.4 0 2l3.4 5.8c.4.6 1.1 1 1.8 1 .7 0 1.4-.4 1.8-1L10 9.8h4l2.6 5.4c.4.6 1.1 1 1.8 1 .7 0 1.4-.4 1.8-1l3.4-5.8c.4-.6.4-1.4 0-2zm-6.8 2.6L12 4.4l-4.8 5.4h9.6z"/>
+      </svg>
+      GitLab Account
+    </h2>
+    <p style="margin: 0 0 20px 0; font-size: 14px; color: var(--md-sys-color-on-surface-variant, #aaa);">
+      You are connected to GitLab. Would you like to disconnect your account?
+    </p>
+    <div style="display: flex; gap: 12px;">
+      <button id="cancelGitLabDisconnect" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+        Cancel
+      </button>
+      <button id="confirmGitLabDisconnect" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
+        Disconnect
+      </button>
+    </div>
+  `;
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  dialog.querySelector('#cancelGitLabDisconnect').addEventListener('click', () => {
+    modal.remove();
+  });
+
+  dialog.querySelector('#confirmGitLabDisconnect').addEventListener('click', async () => {
+    modal.remove();
+    stopSnippetAutoSync();
+    await clearSnippetToken();
+    await chrome.storage.local.remove(['bmz_snippet_id']);
+    snippetId = null;
+    updateGitLabButtonIcon();
+    showToast('GitLab account disconnected');
+  });
+
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
 }
 
 // Calculate diff between local and remote bookmark trees
@@ -1541,11 +1207,15 @@ function calculateBookmarkDiff(localTree, remoteTree) {
     localTree.children.forEach(root => mapItems(root, localMap));
   }
 
-  // Map remote tree (Gist structure with roots)
-  if (remoteTree && remoteTree.roots) {
-    Object.values(remoteTree.roots).forEach(root => {
-      if (root) mapItems(root, remoteMap);
-    });
+  // Map remote tree (Snippet structure with roots OR Chrome structure with children)
+  if (remoteTree) {
+    if (remoteTree.roots) {
+      Object.values(remoteTree.roots).forEach(root => {
+        if (root) mapItems(root, remoteMap);
+      });
+    } else if (remoteTree.children) {
+      remoteTree.children.forEach(root => mapItems(root, remoteMap));
+    }
   }
 
   // Find added (in remote but not in local)
@@ -1592,8 +1262,10 @@ function calculateBookmarkDiff(localTree, remoteTree) {
         });
       }
 
-      // Check if modified (different title or URL)
-      if (localNode.title !== remoteNode.title || localNode.url !== remoteNode.url) {
+      // Check if modified (different title or URL), ignoring case-only title differences
+      const titleDiffers = localNode.title?.toLowerCase() !== remoteNode.title?.toLowerCase();
+      const urlDiffers = localNode.url !== remoteNode.url;
+      if (titleDiffers || urlDiffers) {
         diff.modified.push({
           id,
           oldTitle: localNode.title,
@@ -1610,14 +1282,15 @@ function calculateBookmarkDiff(localTree, remoteTree) {
   return diff;
 }
 
-// Convert Gist format to Chrome bookmarks structure
-function gistFormatToChromeBookmarks(gistData) {
-  const convertNode = (node) => {
+// Convert Snippet format to Chrome bookmarks structure
+function snippetFormatToChromeBookmarks(snippetData) {
+  const convertNode = (node, parentId = null) => {
     if (node.type === 'bookmark' || node.url) {
       return {
         id: node.id,
         title: node.title,
         url: node.url,
+        parentId: parentId,
         dateAdded: node.dateAdded || Date.now()
       };
     } else {
@@ -1625,11 +1298,12 @@ function gistFormatToChromeBookmarks(gistData) {
       const folder = {
         id: node.id,
         title: node.title || node.name || 'Unnamed Folder',
+        parentId: parentId,
         dateAdded: node.dateAdded || Date.now(),
         children: []
       };
       if (node.children && node.children.length > 0) {
-        folder.children = node.children.map(child => convertNode(child));
+        folder.children = node.children.map(child => convertNode(child, node.id));
       }
       return folder;
     }
@@ -1637,9 +1311,9 @@ function gistFormatToChromeBookmarks(gistData) {
 
   // Convert roots back to Chrome structure
   const chromeRoots = [];
-  if (gistData.roots) {
-    if (gistData.roots.bookmark_bar) {
-      chromeRoots.push(convertNode({ ...gistData.roots.bookmark_bar, id: '1' }));
+  if (snippetData.roots) {
+    if (snippetData.roots.bookmark_bar) {
+      chromeRoots.push(convertNode({ ...snippetData.roots.bookmark_bar, id: '1' }, '0'));
     }
 
     // Merge "menu" and "other" folders into Chrome's "Other Bookmarks" (ID='2')
@@ -1654,26 +1328,26 @@ function gistFormatToChromeBookmarks(gistData) {
     };
 
     // Add "Other Bookmarks" children first
-    if (gistData.roots.other && gistData.roots.other.children) {
-      otherFolder.children.push(...gistData.roots.other.children);
+    if (snippetData.roots.other && snippetData.roots.other.children) {
+      otherFolder.children.push(...snippetData.roots.other.children);
     }
 
     // Add "Bookmarks Menu" children in a subfolder to keep them organized
-    if (gistData.roots.menu && gistData.roots.menu.children && gistData.roots.menu.children.length > 0) {
+    if (snippetData.roots.menu && snippetData.roots.menu.children && snippetData.roots.menu.children.length > 0) {
       otherFolder.children.push({
         id: 'menu_imported',
         title: 'Bookmarks Menu (imported)',
         name: 'Bookmarks Menu (imported)',
         type: 'folder',
         dateAdded: Date.now(),
-        children: gistData.roots.menu.children
+        children: snippetData.roots.menu.children
       });
     }
 
-    chromeRoots.push(convertNode(otherFolder));
+    chromeRoots.push(convertNode(otherFolder, '0'));
 
-    if (gistData.roots.mobile) {
-      chromeRoots.push(convertNode({ ...gistData.roots.mobile, id: '3' }));
+    if (snippetData.roots.mobile) {
+      chromeRoots.push(convertNode({ ...snippetData.roots.mobile, id: '3' }, '0'));
     }
   }
 
@@ -1685,7 +1359,7 @@ function gistFormatToChromeBookmarks(gistData) {
 }
 
 // Apply remote changes to local Chrome bookmarks
-async function applyRemoteChangesToChrome(remoteGistData) {
+async function applyRemoteChangesToChrome(remoteSnippetData) {
   // This is a DESTRUCTIVE operation - it will override local bookmarks
   // Show double confirmation dialog
   return new Promise((resolve) => {
@@ -1700,7 +1374,7 @@ async function applyRemoteChangesToChrome(remoteGistData) {
         ⚠️ WARNING: This Will Override Your Native Browser Bookmarks
       </h2>
       <p style="margin: 0 0 16px 0; font-size: 14px;">
-        This action will <strong>permanently replace</strong> your current Chrome bookmarks with the data from the Gist.
+        This action will <strong>permanently replace</strong> your current Chrome bookmarks with the data from the Snippet.
       </p>
       <p style="margin: 0 0 20px 0; font-size: 14px; font-weight: 500;">
         Are you absolutely sure you want to proceed?
@@ -1728,7 +1402,7 @@ async function applyRemoteChangesToChrome(remoteGistData) {
 
       // Second confirmation
       const confirmed = confirm(
-        'FINAL CONFIRMATION: This will permanently delete all your current Chrome bookmarks and replace them with the Gist data. This cannot be undone. Click OK to proceed.'
+        'FINAL CONFIRMATION: This will permanently delete all your current Chrome bookmarks and replace them with the Snippet data. This cannot be undone. Click OK to proceed.'
       );
 
       if (!confirmed) {
@@ -1737,7 +1411,7 @@ async function applyRemoteChangesToChrome(remoteGistData) {
       }
 
       try {
-        showToast('Syncing from Gist... This may take a moment.');
+        showToast('Syncing from Snippet... This may take a moment.');
 
         // Get current bookmark tree
         const currentTree = await chrome.bookmarks.getTree();
@@ -1753,7 +1427,7 @@ async function applyRemoteChangesToChrome(remoteGistData) {
           }
         }
 
-        // Add new bookmarks from Gist
+        // Add new bookmarks from Snippet
         const createNodes = async (nodes, parentId) => {
           for (const node of nodes) {
             if (node.url) {
@@ -1774,37 +1448,37 @@ async function applyRemoteChangesToChrome(remoteGistData) {
           }
         };
 
-        // Recreate bookmark structure from Gist
-        if (remoteGistData.roots) {
-          if (remoteGistData.roots.bookmark_bar && remoteGistData.roots.bookmark_bar.children) {
-            await createNodes(remoteGistData.roots.bookmark_bar.children, '1');
+        // Recreate bookmark structure from Snippet
+        if (remoteSnippetData.roots) {
+          if (remoteSnippetData.roots.bookmark_bar && remoteSnippetData.roots.bookmark_bar.children) {
+            await createNodes(remoteSnippetData.roots.bookmark_bar.children, '1');
           }
 
           // Create "Other Bookmarks" folder (ID='2')
-          if (remoteGistData.roots.other && remoteGistData.roots.other.children) {
-            await createNodes(remoteGistData.roots.other.children, '2');
+          if (remoteSnippetData.roots.other && remoteSnippetData.roots.other.children) {
+            await createNodes(remoteSnippetData.roots.other.children, '2');
           }
 
           // Import "Bookmarks Menu" into "Other Bookmarks" as a subfolder
           // Chrome doesn't have a native "Bookmarks Menu" folder like Firefox
-          if (remoteGistData.roots.menu && remoteGistData.roots.menu.children && remoteGistData.roots.menu.children.length > 0) {
+          if (remoteSnippetData.roots.menu && remoteSnippetData.roots.menu.children && remoteSnippetData.roots.menu.children.length > 0) {
             const menuFolder = await chrome.bookmarks.create({
               parentId: '2',
               title: 'Bookmarks Menu (imported)'
             });
-            await createNodes(remoteGistData.roots.menu.children, menuFolder.id);
+            await createNodes(remoteSnippetData.roots.menu.children, menuFolder.id);
           }
 
-          if (remoteGistData.roots.mobile && remoteGistData.roots.mobile.children) {
-            await createNodes(remoteGistData.roots.mobile.children, '3');
+          if (remoteSnippetData.roots.mobile && remoteSnippetData.roots.mobile.children) {
+            await createNodes(remoteSnippetData.roots.mobile.children, '3');
           }
         }
 
         // Update local version tracking
-        gistLocalVersion = remoteGistData.version || 1;
-        await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
+        snippetLocalVersion = remoteSnippetData.version || 1;
+        await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
 
-        showToast('Bookmarks synced from Gist successfully!');
+        showToast('Bookmarks synced successfully!');
         resolve(true);
 
         // Reload the bookmark view
@@ -1827,7 +1501,7 @@ async function applyRemoteChangesToChrome(remoteGistData) {
 }
 
 // Show sync diff dialog
-async function showSyncDiffDialog(diff, remoteGistData) {
+async function showSyncDiffDialog(diff, remoteSnippetData) {
   const modal = document.createElement('div');
   modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
 
@@ -1836,10 +1510,10 @@ async function showSyncDiffDialog(diff, remoteGistData) {
 
   const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
 
-  let content = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Gist Sync Changes</h2>';
+  let content = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Snippet Sync Changes</h2>';
 
   if (!hasChanges) {
-    content += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No changes detected. Your local bookmarks match the Gist.</p>';
+    content += '<p style="color: var(--md-sys-color-on-surface-variant, #aaa);">No changes detected. Your local bookmarks match the Snippet.</p>';
   } else {
     // Summary
     content += '<div style="margin-bottom: 20px; padding: 16px; background: var(--md-sys-color-surface-variant, #2a2a2a); border-radius: 8px;">';
@@ -1902,7 +1576,7 @@ async function showSyncDiffDialog(diff, remoteGistData) {
 
   content += `
     <div style="display: flex; gap: 12px; margin-top: 20px;">
-      ${hasChanges && diff.removed.length > 0 ? `
+      ${hasChanges ? `
         <button id="applyRemoteChanges" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
           Apply Changes to Local Bookmarks
         </button>
@@ -1921,7 +1595,7 @@ async function showSyncDiffDialog(diff, remoteGistData) {
   if (applyBtn) {
     applyBtn.addEventListener('click', async () => {
       modal.remove();
-      await applyRemoteChangesToChrome(remoteGistData);
+      await applyRemoteChangesToChrome(remoteSnippetData);
     });
   }
 
@@ -1931,215 +1605,7 @@ async function showSyncDiffDialog(diff, remoteGistData) {
   });
 }
 
-// Sync from Gist to Chrome bookmarks
-async function syncFromGist() {
-  if (!gistId) {
-    showToast('No Gist connected', 'error');
-    return;
-  }
 
-  try {
-    showToast('Checking for Gist updates...');
-
-    const remoteData = await readBookmarksFromGist(gistId);
-    const localTree = await chrome.bookmarks.getTree();
-
-    const diff = calculateBookmarkDiff(localTree[0], remoteData);
-    const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
-
-    if (!hasChanges) {
-      showToast('No changes detected. Bookmarks are in sync.');
-      return;
-    }
-
-    // Show diff dialog
-    await showSyncDiffDialog(diff, remoteData);
-  } catch (error) {
-    console.error('Sync from Gist failed:', error);
-    showToast(`Error: ${error.message}`, 'error');
-  }
-}
-
-// Sync from Chrome bookmarks to Gist
-async function syncToGist() {
-  if (!gistId) {
-    showToast('No Gist connected', 'error');
-    return;
-  }
-
-  try {
-    showToast('Syncing to Gist...');
-
-    const chromeTree = await chrome.bookmarks.getTree();
-    const gistData = await chromeBookmarksToGistFormat(chromeTree);
-
-    await updateBookmarksInGist(gistData);
-
-    // Update local version tracking
-    gistLocalVersion = (gistData.version || 1);
-    await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
-
-    showToast('Synced to Gist successfully!');
-  } catch (error) {
-    console.error('Sync to Gist failed:', error);
-    showToast(`Error: ${error.message}`, 'error');
-  }
-}
-
-// Auto-sync: Check for Gist updates (background polling)
-async function autoCheckGistUpdates() {
-  if (gistIsSyncing || !gistId || !gistToken || !navigator.onLine) {
-    return;
-  }
-
-  gistIsSyncing = true;
-
-  try {
-    const remoteData = await readBookmarksFromGist(gistId);
-    const remoteVersion = remoteData.version || 1;
-
-    // Load local version
-    const versionResult = await chrome.storage.local.get(['gist_local_version']);
-    gistLocalVersion = versionResult.gist_local_version || 0;
-
-    // Check if remote has newer changes
-    if (remoteVersion > gistLocalVersion) {
-      console.log(`Gist has updates: remote v${remoteVersion} > local v${gistLocalVersion}`);
-
-      const localTree = await chrome.bookmarks.getTree();
-      const diff = calculateBookmarkDiff(localTree[0], remoteData);
-      const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
-
-      if (hasChanges) {
-        // Show enhanced toast notification with "View Changes" button
-        showGistUpdateToast(diff, remoteData);
-      } else {
-        // No actual changes, just update version
-        gistLocalVersion = remoteVersion;
-        await chrome.storage.local.set({ gist_local_version: gistLocalVersion });
-      }
-    }
-
-    gistLastSyncTime = Date.now();
-    await chrome.storage.local.set({ gist_last_sync: gistLastSyncTime });
-  } catch (error) {
-    console.error('Auto-check Gist updates failed:', error);
-  } finally {
-    gistIsSyncing = false;
-  }
-}
-
-// Show enhanced toast notification for Gist updates
-function showGistUpdateToast(diff, remoteData) {
-  const totalChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length;
-
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 16px 20px;
-    background: var(--md-sys-color-primary-container, #2a2a5a);
-    color: var(--md-sys-color-on-primary-container, #e0e0ff);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    z-index: 10000;
-    min-width: 320px;
-    max-width: 400px;
-  `;
-
-  toast.innerHTML = `
-    <div style="margin-bottom: 8px; font-weight: 500; font-size: 14px;">
-      Gist Update Available
-    </div>
-    <div style="font-size: 12px; margin-bottom: 12px; opacity: 0.9;">
-      ${diff.added.length} added, ${diff.removed.length} removed, ${diff.moved.length} moved, ${diff.modified.length} modified
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <button id="viewGistChanges" style="
-        flex: 1;
-        background: var(--md-sys-color-primary, #818cf8);
-        color: var(--md-sys-color-on-primary, #fff);
-        border: none;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 13px;
-        font-weight: 500;
-      ">View Changes</button>
-      <button id="dismissGistToast" style="
-        background: transparent;
-        color: var(--md-sys-color-on-primary-container, #e0e0ff);
-        border: 1px solid currentColor;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 13px;
-      ">Dismiss</button>
-    </div>
-  `;
-
-  document.body.appendChild(toast);
-
-  // View changes button
-  toast.querySelector('#viewGistChanges').addEventListener('click', () => {
-    showSyncDiffDialog(diff, remoteData);
-    toast.remove();
-  });
-
-  // Dismiss button
-  toast.querySelector('#dismissGistToast').addEventListener('click', () => {
-    toast.remove();
-  });
-
-  // Auto-remove after 30 seconds
-  setTimeout(() => {
-    if (toast.parentElement) {
-      toast.remove();
-    }
-  }, 30000);
-}
-
-// Start auto-sync polling (every 60 seconds)
-function startGistAutoSync() {
-  if (gistSyncInterval) {
-    return; // Already running
-  }
-
-  console.log('Starting Gist auto-sync (60s polling)...');
-  gistSyncInterval = setInterval(async () => {
-    if (navigator.onLine && gistId && gistToken) {
-      await autoCheckGistUpdates();
-    }
-  }, 60000); // 60 seconds
-
-  // Also run check immediately
-  autoCheckGistUpdates();
-}
-
-// Stop auto-sync polling
-function stopGistAutoSync() {
-  if (gistSyncInterval) {
-    clearInterval(gistSyncInterval);
-    gistSyncInterval = null;
-    console.log('Gist auto-sync stopped');
-  }
-}
-
-// Online/Offline event handlers
-window.addEventListener('online', async () => {
-  console.log('Back online - resuming Gist sync');
-  if (gistId && gistToken) {
-    showToast('Back online - checking for Gist updates...');
-    await autoCheckGistUpdates();
-    startGistAutoSync();
-  }
-});
-
-window.addEventListener('offline', () => {
-  console.log('Offline - pausing Gist sync');
-  stopGistAutoSync();
-});
 
 // ============================================================================
 // CHANGELOG UTILITIES
@@ -2419,6 +1885,7 @@ const zoomSlider = document.getElementById('zoomSlider');
 const zoomValue = document.getElementById('zoomValue');
 const fontSizeSlider = document.getElementById('fontSizeSlider');
 const fontSizeValue = document.getElementById('fontSizeValue');
+const gitlabBtn = document.getElementById('gitlabBtn');
 const settingsBtn = document.getElementById('settingsBtn');
 const settingsMenu = document.getElementById('settingsMenu');
 const openInTabBtn = document.getElementById('openInTabBtn');
@@ -2643,22 +2110,19 @@ async function init() {
   await loadSafetyHistory();
   await loadFolderScanTimestamps();
   await loadAutoClearSetting();
-  await loadGistToken();
-  const gistIdResult = await chrome.storage.local.get(['bmz_gist_id', 'gist_local_version', 'gist_last_sync']);
-  if (gistIdResult.bmz_gist_id) {
-    gistId = gistIdResult.bmz_gist_id;
+  await loadSnippetToken();
+  const snippetIdResult = await chrome.storage.local.get(['bmz_snippet_id', 'snippet_local_version', 'snippet_last_sync']);
+  if (snippetIdResult.bmz_snippet_id) {
+    snippetId = snippetIdResult.bmz_snippet_id;
   }
-  if (gistIdResult.gist_local_version) {
-    gistLocalVersion = gistIdResult.gist_local_version;
+  if (snippetIdResult.snippet_local_version) {
+    snippetLocalVersion = snippetIdResult.snippet_local_version;
   }
-  if (gistIdResult.gist_last_sync) {
-    gistLastSyncTime = gistIdResult.gist_last_sync;
+  if (snippetIdResult.snippet_last_sync) {
+    snippetLastSyncTime = snippetIdResult.snippet_last_sync;
   }
 
-  // Start auto-sync if Gist is connected
-  if (gistId && gistToken && navigator.onLine) {
-    startGistAutoSync();
-  }
+  updateGitLabButtonIcon();
 
   await loadBookmarks();
   cleanupSafetyHistory(); // Clean up stale entries on sidebar load
@@ -3058,63 +2522,10 @@ function setZoom(newZoom) {
 }
 
 // ============================================================================
-// PROVIDER SWITCHING (GitHub/GitLab)
+// PROVIDER SWITCHING (GitLab)
 // ============================================================================
 
-/**
- * Switch between GitHub and GitLab providers
- * Updates logo styles and shows/hides instruction panels
- */
-function switchToProvider(provider) {
-  const githubLogo = document.getElementById('githubLogo');
-  const gitlabLogo = document.getElementById('gitlabLogo');
-  const githubInstructions = document.getElementById('githubInstructions');
-  const gitlabInstructions = document.getElementById('gitlabInstructions');
 
-  if (!githubLogo || !gitlabLogo) {
-    return;
-  }
-
-  console.log('Switching to provider:', provider);
-
-  if (provider === 'github') {
-    // Highlight GitHub
-    githubLogo.style.background = 'var(--md-sys-color-primary)';
-    githubLogo.style.opacity = '1';
-    githubLogo.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-    const githubSvg = githubLogo.querySelector('svg');
-    if (githubSvg) githubSvg.style.color = 'var(--md-sys-color-on-primary)';
-
-    // Dim GitLab
-    gitlabLogo.style.background = 'var(--md-sys-color-surface-variant)';
-    gitlabLogo.style.opacity = '0.6';
-    gitlabLogo.style.boxShadow = 'none';
-    const gitlabSvg = gitlabLogo.querySelector('svg');
-    if (gitlabSvg) gitlabSvg.style.color = 'var(--md-sys-color-on-surface)';
-
-    // Show GitHub instructions
-    if (githubInstructions) githubInstructions.style.display = 'block';
-    if (gitlabInstructions) gitlabInstructions.style.display = 'none';
-  } else {
-    // Highlight GitLab
-    gitlabLogo.style.background = 'var(--md-sys-color-primary)';
-    gitlabLogo.style.opacity = '1';
-    gitlabLogo.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-    const gitlabSvg = gitlabLogo.querySelector('svg');
-    if (gitlabSvg) gitlabSvg.style.color = 'var(--md-sys-color-on-primary)';
-
-    // Dim GitHub
-    githubLogo.style.background = 'var(--md-sys-color-surface-variant)';
-    githubLogo.style.opacity = '0.6';
-    githubLogo.style.boxShadow = 'none';
-    const githubSvg = githubLogo.querySelector('svg');
-    if (githubSvg) githubSvg.style.color = 'var(--md-sys-color-on-surface)';
-
-    // Show GitLab instructions
-    if (githubInstructions) githubInstructions.style.display = 'none';
-    if (gitlabInstructions) gitlabInstructions.style.display = 'block';
-  }
-}
 
 // Update zoom display
 function updateZoomDisplay() {
@@ -8278,6 +7689,59 @@ function setupEventListeners() {
     localStorage.setItem('guiScale', guiScale);
   });
 
+  // Manual sync button
+  const manualSyncBtn = document.getElementById('manualSyncBtn');
+  if (manualSyncBtn) {
+    manualSyncBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+
+      if (!snippetToken) {
+        console.warn('You must log in or provide a PAT token before using Manual Sync.');
+        return;
+      }
+
+      const forcePush = e.shiftKey;
+      if (forcePush) {
+        if (!confirm('Force push local bookmarks to remote? This will overwrite the remote with your local data.')) {
+          return;
+        }
+      }
+
+      manualSyncBtn.disabled = true;
+      const originalContent = manualSyncBtn.innerHTML;
+      manualSyncBtn.innerHTML = '<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="animation: spin 1s linear infinite;"><path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/></svg>';
+
+      try {
+        if (forcePush) {
+          await syncToSnippet();
+          showToast('Bookmarks pushed to GitLab successfully', 'success');
+        } else {
+          await syncFromSnippet();
+          showToast('Sync completed successfully', 'success');
+        }
+      } catch (error) {
+        console.error('[ManualSync] Sync failed:', error);
+        showToast(`Sync failed: ${error.message}`, 'error');
+      } finally {
+        manualSyncBtn.disabled = false;
+        manualSyncBtn.innerHTML = originalContent;
+      }
+    });
+  }
+
+  // GitLab account button
+  if (gitlabBtn) {
+    gitlabBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      
+      if (snippetToken && snippetId) {
+        showGitLabDisconnectDialog();
+      } else {
+        await openSnippetSyncDialog();
+      }
+    });
+  }
+
   // Settings menu
   settingsBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -8322,15 +7786,6 @@ function setupEventListeners() {
     await clearCache();
     closeAllMenus();
   });
-
-  // GitHub Gist Sync
-  const gistSyncBtn = document.getElementById('gistSyncBtn');
-  if (gistSyncBtn) {
-    gistSyncBtn.addEventListener('click', async () => {
-      await openGistSyncDialog();
-      closeAllMenus();
-    });
-  }
 
   const snippetSyncBtn = document.getElementById('snippetSyncBtn');
   if (snippetSyncBtn) {
@@ -9188,6 +8643,9 @@ function setupEventListeners() {
           console.error('[Bookmark Sync] Failed to sync:', error);
         }
       }, 100); // 100ms debounce
+      
+      // Trigger event-driven push sync to Snippet (30s debounce, 60s rate limit)
+      markSnippetChanges();
     };
 
     chrome.bookmarks.onCreated.addListener((id, bookmark) => {
@@ -9454,85 +8912,6 @@ function setupEventListeners() {
   // ============================================================================
   // PROVIDER SWITCHING & LOGIN HANDLERS
   // ============================================================================
-
-  // Logo click handlers - switch between GitHub and GitLab
-  const githubLogo = document.getElementById('githubLogo');
-  const gitlabLogo = document.getElementById('gitlabLogo');
-
-  if (githubLogo) {
-    githubLogo.addEventListener('click', () => {
-      switchToProvider('github');
-    });
-  }
-
-  if (gitlabLogo) {
-    gitlabLogo.addEventListener('click', () => {
-      switchToProvider('gitlab');
-    });
-  }
-
-  // GitHub login button handler
-  const loginBtn = document.getElementById('loginBtn');
-  const tokenInput = document.getElementById('tokenInput');
-  const loginError = document.getElementById('loginError');
-
-  if (loginBtn && tokenInput) {
-    // Handle Enter key in token input
-    tokenInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        loginBtn.click();
-      }
-    });
-
-    loginBtn.onclick = async () => {
-      const token = tokenInput.value.trim();
-
-      if (!token) {
-        if (loginError) {
-          loginError.textContent = 'Please enter your Personal Access Token';
-          loginError.style.display = 'block';
-        }
-        return;
-      }
-
-      // Show loading state
-      loginBtn.disabled = true;
-      loginBtn.textContent = 'Authenticating...';
-      if (loginError) loginError.style.display = 'none';
-
-      try {
-        // Validate token
-        gistToken = token;
-        const user = await validateGistToken();
-
-        if (!user) {
-          throw new Error('Invalid GitHub token');
-        }
-
-        console.log(`Authenticated with GitHub:`, user.login);
-
-        // Store token securely
-        await storeGistToken(token);
-
-        // Show success message
-        showToast(`Authenticated as ${user.login}`);
-
-        // Open Gist sync dialog
-        await openGistSyncDialog();
-
-      } catch (error) {
-        console.error('Login failed:', error);
-        if (loginError) {
-          loginError.textContent = error.message || 'Authentication failed. Please check your token and try again.';
-          loginError.style.display = 'block';
-        }
-
-        // Reset button
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Login with GitHub';
-      }
-    };
-  }
 
   // GitLab login button handler
   const loginBtnGitlab = document.getElementById('loginBtnGitlab');
