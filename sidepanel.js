@@ -472,14 +472,349 @@ function getSnippetHeaders() {
   };
 }
 
+// Show informational popup for GitLab rate limiting
+function showGitLabRateLimitPopup(retryCallback) {
+  // Remove any existing popup
+  const existingPopup = document.getElementById('gitlab-rate-limit-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'gitlab-rate-limit-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--md-sys-color-surface, #ffffff);
+    color: var(--md-sys-color-on-surface, #000000);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    position: relative;
+  `;
+
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: var(--md-sys-color-error, #d32f2f);">
+      GitLab Rate Limit Reached
+    </h2>
+    <p style="margin: 0 0 16px 0; line-height: 1.5;">
+      Too many requests were sent; GitLab temporarily blocked further requests.
+    </p>
+    <p style="margin: 0 0 20px 0; line-height: 1.5;">
+      No token changes required. Wait and try again later.
+    </p>
+    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+      <button id="gitlab-rate-limit-cancel" style="
+        background: var(--md-sys-color-surface-variant, #f5f5f5);
+        color: var(--md-sys-color-on-surface-variant, #666666);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      ">Cancel</button>
+      <button id="gitlab-rate-limit-retry" style="
+        background: var(--md-sys-color-primary, #1976d2);
+        color: var(--md-sys-color-on-primary, #ffffff);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      ">Retry</button>
+    </div>
+  `;
+
+  popup.appendChild(dialog);
+  document.body.appendChild(popup);
+
+  // Event listeners
+  dialog.querySelector('#gitlab-rate-limit-cancel').addEventListener('click', () => {
+    popup.remove();
+  });
+
+  dialog.querySelector('#gitlab-rate-limit-retry').addEventListener('click', () => {
+    popup.remove();
+    // Wait a short delay before retrying
+    setTimeout(() => {
+      if (retryCallback) {
+        retryCallback();
+      }
+    }, 2000); // 2 second delay
+  });
+
+  // Close on background click
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) {
+      popup.remove();
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', function closeOnEscape(e) {
+    if (e.key === 'Escape') {
+      popup.remove();
+      document.removeEventListener('keydown', closeOnEscape);
+    }
+  });
+}
+
+// Show informational popup for GitLab service errors (5xx)
+function showGitLabServiceErrorPopup(retryCallback) {
+  // Remove any existing popup
+  const existingPopup = document.getElementById('gitlab-service-error-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'gitlab-service-error-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--md-sys-color-surface, #ffffff);
+    color: var(--md-sys-color-on-surface, #000000);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    position: relative;
+  `;
+
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: var(--md-sys-color-error, #d32f2f);">
+      GitLab Service Error
+    </h2>
+    <p style="margin: 0 0 16px 0; line-height: 1.5;">
+      GitLab returned a server error. This indicates a temporary issue on GitLab's side, not a token problem.
+    </p>
+    <p style="margin: 0 0 20px 0; line-height: 1.5;">
+      Try again later.
+    </p>
+    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+      <button id="gitlab-service-error-cancel" style="
+        background: var(--md-sys-color-surface-variant, #f5f5f5);
+        color: var(--md-sys-color-on-surface-variant, #666666);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      ">Cancel</button>
+      <button id="gitlab-service-error-retry" style="
+        background: var(--md-sys-color-primary, #1976d2);
+        color: var(--md-sys-color-on-primary, #ffffff);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      ">Retry</button>
+    </div>
+  `;
+
+  popup.appendChild(dialog);
+  document.body.appendChild(popup);
+
+  // Event listeners
+  dialog.querySelector('#gitlab-service-error-cancel').addEventListener('click', () => {
+    popup.remove();
+  });
+
+  dialog.querySelector('#gitlab-service-error-retry').addEventListener('click', () => {
+    popup.remove();
+    // Wait a short delay before retrying
+    setTimeout(() => {
+      if (retryCallback) {
+        retryCallback();
+      }
+    }, 2000); // 2 second delay
+  });
+
+  // Close on background click
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) {
+      popup.remove();
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', function closeOnEscape(e) {
+    if (e.key === 'Escape') {
+      popup.remove();
+      document.removeEventListener('keydown', closeOnEscape);
+    }
+  });
+}
+
+// Show informational popup for GitLab authentication errors
+function showGitLabAuthErrorPopup(retryCallback, isPermissionError = false) {
+  // Remove any existing popup
+  const existingPopup = document.getElementById('gitlab-auth-error-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+
+  const popup = document.createElement('div');
+  popup.id = 'gitlab-auth-error-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: var(--md-sys-color-surface, #ffffff);
+    color: var(--md-sys-color-on-surface, #000000);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    position: relative;
+  `;
+
+  const title = isPermissionError ? 'GitLab Permission Error' : 'GitLab Authentication Error';
+  const bodyContent = isPermissionError
+    ? `<p style="margin: 0 0 16px 0; line-height: 1.5;">
+        The token is valid, but GitLab denied access. This usually means insufficient permissions or scopes, or the account cannot access the resource.
+      </p>
+      <p style="margin: 0 0 20px 0; line-height: 1.5;">
+        Ensure the token has "api" scope and the account has proper access.
+      </p>`
+    : `<p style="margin: 0 0 16px 0; line-height: 1.5;">
+        The PAT returned an authentication error from GitLab. The most likely cause of this is a typo, an expired token (Gitlab tokens expire every 12 months), or the token was created without the required "api" scope.
+      </p>
+      <p style="margin: 0 0 16px 0; line-height: 1.5;">
+        If expired, create a new token with the "api" scope. If still active, you may edit it in GitLab to add the "api" scope, then retry.
+      </p>
+      <p style="margin: 0 0 20px 0; font-size: 14px; opacity: 0.8;">
+        Account issues may also cause 401 (e.g., flagged or restricted account).
+      </p>`;
+
+  const buttonText = isPermissionError ? 'Retry' : 'Retry with New Token';
+
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: var(--md-sys-color-error, #d32f2f);">
+      ${title}
+    </h2>
+    ${bodyContent}
+    <div style="display: flex; gap: 12px; justify-content: flex-end;">
+      <button id="gitlab-auth-cancel" style="
+        background: var(--md-sys-color-surface-variant, #f5f5f5);
+        color: var(--md-sys-color-on-surface-variant, #666666);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+      ">Cancel</button>
+      <button id="gitlab-auth-retry" style="
+        background: var(--md-sys-color-primary, #1976d2);
+        color: var(--md-sys-color-on-primary, #ffffff);
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+      ">${buttonText}</button>
+    </div>
+  `;
+
+  popup.appendChild(dialog);
+  document.body.appendChild(popup);
+
+  // Event listeners
+  dialog.querySelector('#gitlab-auth-cancel').addEventListener('click', () => {
+    popup.remove();
+  });
+
+  dialog.querySelector('#gitlab-auth-retry').addEventListener('click', () => {
+    popup.remove();
+    if (retryCallback) {
+      retryCallback();
+    }
+  });
+
+  // Close on background click
+  popup.addEventListener('click', (e) => {
+    if (e.target === popup) {
+      popup.remove();
+    }
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', function closeOnEscape(e) {
+    if (e.key === 'Escape') {
+      popup.remove();
+      document.removeEventListener('keydown', closeOnEscape);
+    }
+  });
+}
+
 // Validate GitLab token
-async function validateSnippetToken() {
+async function validateSnippetToken(retryCallback = null) {
   try {
     const response = await fetch('https://gitlab.com/api/v4/user', {
       headers: getSnippetHeaders()
     });
     if (!response.ok) {
-      throw new Error(`GitLab API error: ${response.status}`);
+      if (response.status === 401) {
+        // Show informational popup and allow retry
+        showGitLabAuthErrorPopup(retryCallback, false);
+        return null;
+      } else if (response.status === 403) {
+        // Show permission error popup and allow retry
+        showGitLabAuthErrorPopup(retryCallback, true);
+        return null;
+      } else if (response.status >= 500 && response.status < 600) {
+        // Show service error popup and allow retry
+        showGitLabServiceErrorPopup(retryCallback);
+        return null;
+      } else {
+        throw new Error(`GitLab API error: ${response.status}`);
+      }
     }
     const user = await response.json();
     console.log('GitLab token validated for user:', user.username);
@@ -491,13 +826,39 @@ async function validateSnippetToken() {
 }
 
 // Get all user's snippets
-async function getAllSnippets() {
+async function getAllSnippets(retryCallback = null) {
   try {
     const response = await fetch('https://gitlab.com/api/v4/snippets', {
       headers: getSnippetHeaders()
     });
     if (!response.ok) {
-      throw new Error(`Failed to fetch snippets: ${response.status}`);
+      if (response.status === 401) {
+        // Show informational popup and allow retry
+        showGitLabAuthErrorPopup(retryCallback, false);
+        return null;
+      } else if (response.status === 403) {
+        // Show permission error popup and allow retry
+        showGitLabAuthErrorPopup(retryCallback, true);
+        return null;
+      } else if (response.status === 429) {
+        // Show rate limit popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabRateLimitPopup(() => {
+            // Retry the entire operation
+            getAllSnippets(retryCallback).then(resolve).catch(reject);
+          });
+        });
+      } else if (response.status >= 500 && response.status < 600) {
+        // Show service error popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabServiceErrorPopup(() => {
+            // Retry the entire operation
+            getAllSnippets(retryCallback).then(resolve).catch(reject);
+          });
+        });
+      } else {
+        throw new Error(`Failed to fetch snippets: ${response.status}`);
+      }
     }
     return await response.json();
   } catch (error) {
@@ -546,13 +907,30 @@ async function createBookmarkSnippet(bookmarkTree = null) {
         files: [
           {
             file_path: 'bookmarks.json',
-            content: JSON.stringify(tree, null, 2)
+            content: JSON.stringify(tree)
           }
         ]
       })
     });
 
     if (!response.ok) {
+      if (response.status === 429) {
+        // Show rate limit popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabRateLimitPopup(() => {
+            // Retry the entire operation
+            createBookmarkSnippet(bookmarkTree).then(resolve).catch(reject);
+          });
+        });
+      } else if (response.status >= 500 && response.status < 600) {
+        // Show service error popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabServiceErrorPopup(() => {
+            // Retry the entire operation
+            createBookmarkSnippet(bookmarkTree).then(resolve).catch(reject);
+          });
+        });
+      }
       const errorText = await response.text();
       throw new Error(`Failed to create Snippet: ${response.status} - ${errorText}`);
     }
@@ -583,6 +961,14 @@ async function readBookmarksFromSnippet(id = null) {
     if (!response.ok) {
       if (response.status === 404) {
         throw new Error('Bookmark Snippet not found');
+      } else if (response.status >= 500 && response.status < 600) {
+        // Show service error popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabServiceErrorPopup(() => {
+            // Retry the entire operation
+            readBookmarksFromSnippet(id).then(resolve).catch(reject);
+          });
+        });
       }
       throw new Error(`Failed to read Snippet: ${response.status}`);
     }
@@ -664,6 +1050,15 @@ async function updateBookmarksInSnippet(bookmarkTree, version = null) {
     });
 
     if (!response.ok) {
+      if (response.status >= 500 && response.status < 600) {
+        // Show service error popup and allow retry
+        return new Promise((resolve, reject) => {
+          showGitLabServiceErrorPopup(() => {
+            // Retry the entire operation
+            updateBookmarksInSnippet(bookmarkTree, version).then(resolve).catch(reject);
+          });
+        });
+      }
       const errorText = await response.text();
       throw new Error(`Failed to update Snippet: ${response.status} - ${errorText}`);
     }
@@ -772,7 +1167,7 @@ async function openSnippetSyncDialog() {
     dialog.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitLab Snippet Sync Setup</h2>
       <p style="margin: 0 0 16px 0; color: var(--md-sys-color-on-surface-variant, #aaa); font-size: 14px;">
-        To enable Snippet sync, you need a GitLab Personal Access Token with 'api' permissions.
+        Click below to create a GitLab Personal Access Token with the "api" scope. ⚠️ Important: This token is only shown once — save it securely (e.g., in a notes app or password manager) immediately.<br><br>You can create or rotate tokens anytime, but saving now avoids repeated creation. Multiple tokens work as long as they have the "api" scope.<br><br>Note: Tokens expire yearly. If login fails after some time, your token may have expired.
       </p>
       <a href="https://gitlab.com/-/profile/personal_access_tokens?name=Bookmark+Manager+Zero&scopes=api" target="_blank" style="display: inline-block; margin-bottom: 16px; padding: 8px 16px; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); text-decoration: none; border-radius: 8px; font-size: 13px;">
         Create Token on GitLab →
