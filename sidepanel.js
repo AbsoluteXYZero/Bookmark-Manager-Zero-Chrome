@@ -1517,12 +1517,20 @@ function markSnippetChanges() {
 // Show GitLab disconnect dialog
 function updateGitLabButtonIcon() {
   const gitlabBtnIcon = document.getElementById('gitlabBtnIcon');
-  if (!gitlabBtnIcon) return;
+  if (!gitlabBtnIcon || !gitlabBtn) return;
 
-  if (snippetToken && snippetId) {
-    gitlabBtnIcon.innerHTML = '<path d="M13 3H6c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h7v-2H6V5h7V3zm5.6 5.4l-4.6-4.6-.7.7L17 8h-6v1h6l-3.7 3.7.7.7 4.6-4.6-.7-.7z"/>';
+  const isLoggedIn = snippetToken && snippetId;
+
+  if (isLoggedIn) {
+    // Show logout icon and update tooltip for logged in state
+    gitlabBtnIcon.innerHTML = '<path d="M17,7l-1.41,1.41L18.17,11H8v2h10.17l-2.58,2.59L17,17l5-5L17,7z M4,5h8V3H4C2.9,3 2,3.9 2,5v14c0,1.1 0.9,2 2,2h8v-2H4V5z"/>';
+    gitlabBtn.title = 'Logout from GitLab account';
+    gitlabBtn.setAttribute('aria-label', 'Logout from GitLab account');
   } else {
-    gitlabBtnIcon.innerHTML = '<path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>';
+    // Show GitLab logo and update tooltip for not logged in state
+    gitlabBtnIcon.innerHTML = '<path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>';
+    gitlabBtn.title = 'Connect your GitLab account';
+    gitlabBtn.setAttribute('aria-label', 'GitLab account settings');
   }
 }
 
@@ -2037,7 +2045,9 @@ async function addChangelogEntry(type, itemType, title, url = null, details = {}
 
 async function getFolderPath(itemId) {
   try {
-    const parents = [];
+    if (!itemId) return 'Root';
+    
+    const path = [];
     let currentId = itemId;
 
     while (currentId) {
@@ -2045,19 +2055,29 @@ async function getFolderPath(itemId) {
       if (!items || items.length === 0) break;
 
       const item = items[0];
+      if (item.title) {
+        path.unshift(item.title);
+      }
+      
       if (!item.parentId) break;
-
-      const parentItems = await chrome.bookmarks.get(item.parentId);
-      if (!parentItems || parentItems.length === 0) break;
-
-      const parent = parentItems[0];
-      if (!parent.title) break;
-
-      parents.unshift(parent.title);
-      currentId = parent.parentId;
+      currentId = item.parentId;
     }
 
-    return parents.join(' > ') || 'Root';
+    return path.length > 0 ? path.join(' > ') : 'Root';
+  } catch (error) {
+    return 'Unknown';
+  }
+}
+
+async function getFolderName(folderId) {
+  try {
+    if (!folderId) return 'Root';
+    
+    const items = await chrome.bookmarks.get(folderId);
+    if (!items || items.length === 0) return 'Unknown';
+    
+    const folder = items[0];
+    return folder.title || 'Unnamed Folder';
   } catch (error) {
     return 'Unknown';
   }
@@ -4283,7 +4303,8 @@ function createBookmarkElement(bookmark) {
   if (displayOptions.favicon && bookmark.url) {
     const faviconUrl = getFaviconUrl(bookmark.url);
     if (faviconUrl) {
-      faviconHtml = `<img class="bookmark-favicon" src="${escapeHtml(faviconUrl)}" alt="" onerror="this.style.display='none'" />`;
+      // Use onerror to silently hide broken favicons without console errors
+      faviconHtml = `<img class="bookmark-favicon" src="${escapeHtml(faviconUrl)}" alt="" onerror="this.style.display='none';this.onerror=null;" loading="lazy" fetchpriority="low" />`;
     }
   }
 
@@ -7296,6 +7317,7 @@ async function openChangelogModal() {
       if (entry.type === 'create') iconColor = '#10b981';
       else if (entry.type === 'delete') iconColor = '#ef4444';
       else if (entry.type === 'move') iconColor = '#3b82f6';
+      else if (entry.type === 'undo') iconColor = '#8b5cf6';
       else iconColor = '#f59e0b';
 
       // SVG icons for operation types
@@ -7306,6 +7328,8 @@ async function openChangelogModal() {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z"/></svg>`;
       } else if (entry.type === 'move') {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M14,18L12.6,16.6L15.2,14H4V12H15.2L12.6,9.4L14,8L19,13L14,18M20,6H10A2,2 0 0,0 8,8V11H10V8H20V20H10V17H8V20A2,2 0 0,0 10,22H20A2,2 0 0,0 22,20V8A2,2 0 0,0 20,6Z"/></svg>`;
+      } else if (entry.type === 'undo') {
+        icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 19.56,16H22.01C21.43,12.16 17.97,9 13.9,9H12.5V8M12.5,16C10.54,16 8.77,15.28 7.38,14.12L11,10.5H2V19.5L5.6,15.9C7.45,17.5 9.85,18.5 12.5,18.5C17.1,18.5 20.95,15.4 21.9,11.2H19.38C18.77,14.16 15.76,16.34 12.5,16Z"/></svg>`;
       } else {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
       }
@@ -7320,7 +7344,15 @@ async function openChangelogModal() {
 
       let detailsHtml = '';
       if (entry.details) {
-        if (entry.details.oldTitle && entry.details.newTitle) {
+        if (entry.type === 'undo') {
+          if (entry.details.undoType === 'move') {
+            detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Restored to: ${entry.details.restoredToFolder}</div>`;
+          } else if (entry.details.undoType === 'update') {
+            detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Reverted title from: "${entry.details.previousTitle}"</div>`;
+          } else {
+            detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Undid ${entry.details.undoType} operation</div>`;
+          }
+        } else if (entry.details.oldTitle && entry.details.newTitle) {
           detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Renamed from: ${entry.details.oldTitle}</div>`;
         } else if (entry.details.fromFolder && entry.details.toFolder) {
           detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Moved from: ${entry.details.fromFolder} → ${entry.details.toFolder}</div>`;
@@ -7331,6 +7363,19 @@ async function openChangelogModal() {
 
       const urlHtml = entry.url ? `<div class="changelog-url" data-url="${entry.url}" style="font-size: 11px; color: var(--md-sys-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline;" title="Click to copy: ${entry.url}">${entry.url}</div>` : '';
 
+      // Add restore button for undoable operations (delete, move, update) but not for undo entries
+      let restoreButtonHtml = '';
+      if ((entry.type === 'delete' || entry.type === 'move' || entry.type === 'update') && entry.type !== 'undo') {
+        const restoreTitle = entry.type === 'delete' ? 'Restore this item' :
+                            entry.type === 'move' ? 'Move back to original location' :
+                            'Revert changes';
+        restoreButtonHtml = `
+          <button class="changelog-restore-btn" data-entry-id="${entry.id}" title="${restoreTitle}" style="margin-left: auto; padding: 4px 8px; border: 1px solid var(--md-sys-color-outline); border-radius: 4px; background: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); cursor: pointer; font-size: 11px; opacity: 0.7; transition: opacity 0.2s;">
+            Restore
+          </button>
+        `;
+      }
+
       html += `
         <div style="padding: 12px; background: var(--md-sys-color-surface-variant); border-radius: 8px; border-left: 3px solid ${iconColor};">
           <div style="display: flex; align-items: start; gap: 8px;">
@@ -7339,6 +7384,7 @@ async function openChangelogModal() {
               <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px;">
                 <span style="font-size: 14px;">${itemIcon}</span>
                 <span style="font-size: 13px; font-weight: 600; color: var(--md-sys-color-on-surface);">${entry.title || 'Untitled'}</span>
+                ${restoreButtonHtml}
               </div>
               ${urlHtml}
               ${detailsHtml}
@@ -7373,6 +7419,16 @@ async function openChangelogModal() {
         }
       });
     });
+
+    // Add click handlers to restore buttons
+    const restoreButtons = changelogContent.querySelectorAll('.changelog-restore-btn');
+    restoreButtons.forEach(restoreBtn => {
+      restoreBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const entryId = restoreBtn.getAttribute('data-entry-id');
+        await restoreChangelogEntry(entryId);
+      });
+    });
   }
 
   modal.classList.remove('hidden');
@@ -7386,6 +7442,143 @@ function closeChangelogModal() {
   modal.classList.add('hidden');
   modal.setAttribute('aria-hidden', 'true');
   releaseFocusTrap();
+}
+
+// Restore a changelog entry (undo the operation)
+async function restoreChangelogEntry(entryId) {
+  try {
+    const entries = await getChangelogEntries();
+    const entry = entries.find(e => e.id == entryId);
+
+    if (!entry) {
+      alert('Changelog entry not found.');
+      return;
+    }
+
+    // Only allow restoring certain operation types
+    if (!['delete', 'move', 'update'].includes(entry.type)) {
+      alert('This operation type cannot be restored.');
+      return;
+    }
+
+    const confirmed = confirm(`Restore this ${entry.type} operation: "${entry.title}"?\n\nThis will attempt to undo the change.`);
+    if (!confirmed) return;
+
+    if (entry.type === 'delete') {
+      // For delete operations, we can't fully restore without the original data
+      // Show a helpful message instead
+      alert('Delete operations cannot be automatically restored from the changelog.\n\nThe changelog does not store enough data to recreate deleted items.\n\nUse the undo feature immediately after deletion for full restoration.');
+      return;
+    }
+
+    if (entry.type === 'move') {
+      // For move operations, try to move the item back to its original location
+      if (entry.details && entry.details.fromFolder) {
+        // Find the item by title/URL (this is imprecise but better than nothing)
+        const items = await chrome.bookmarks.search({ title: entry.title });
+        const matchingItem = items.find(item =>
+          item.title === entry.title &&
+          (!entry.url || item.url === entry.url)
+        );
+
+        if (matchingItem) {
+          let targetParentId = null;
+          const folderPath = entry.details.fromFolder;
+
+          if (folderPath === 'Root') {
+            targetParentId = undefined;
+          } else if (folderPath) {
+            const allBookmarks = await chrome.bookmarks.getTree();
+            const pathParts = folderPath.split(' > ');
+
+            function findFolderByPath(nodes, parts, index) {
+              if (index >= parts.length) return null;
+              
+              for (const node of nodes) {
+                if (node.title === parts[index] && !node.url) {
+                  if (index === parts.length - 1) {
+                    return node.id;
+                  }
+                  if (node.children) {
+                    const found = findFolderByPath(node.children, parts, index + 1);
+                    if (found) return found;
+                  }
+                }
+              }
+              return null;
+            }
+
+            targetParentId = findFolderByPath(allBookmarks[0].children, pathParts, 0);
+          }
+
+          if (folderPath !== 'Root' && !targetParentId) {
+            alert(`Original folder "${folderPath}" not found. The folder may have been deleted.`);
+            return;
+          }
+
+          try {
+            await chrome.bookmarks.move(matchingItem.id, { parentId: targetParentId });
+            alert(`Moved "${entry.title}" back to ${entry.details.fromFolder || 'Root'}`);
+            
+            const itemType = matchingItem.url ? 'bookmark' : 'folder';
+            await addChangelogEntry('undo', itemType, entry.title, matchingItem.url || null, {
+              undoType: 'move',
+              originalOperation: entry,
+              restoredToFolder: entry.details.fromFolder
+            });
+            
+            await loadBookmarks();
+            renderBookmarks();
+          } catch (error) {
+            alert('Failed to move item back: ' + error.message);
+          }
+        } else {
+          alert('Could not find the moved item. It may have been deleted or renamed.');
+        }
+      } else {
+        alert('Not enough information to restore this move operation.');
+      }
+    }
+
+    if (entry.type === 'update') {
+      // For update operations, try to revert the title change
+      if (entry.details && entry.details.oldTitle) {
+        const items = await chrome.bookmarks.search({ title: entry.title });
+        const matchingItem = items.find(item =>
+          item.title === entry.title &&
+          (!entry.url || item.url === entry.url)
+        );
+
+        if (matchingItem) {
+          try {
+            await chrome.bookmarks.update(matchingItem.id, { title: entry.details.oldTitle });
+            alert(`Restored title from "${entry.title}" back to "${entry.details.oldTitle}"`);
+            
+            const itemType = matchingItem.url ? 'bookmark' : 'folder';
+            await addChangelogEntry('undo', itemType, entry.details.oldTitle, matchingItem.url || null, {
+              undoType: 'update',
+              originalOperation: entry,
+              restoredTitle: entry.details.oldTitle,
+              previousTitle: entry.title
+            });
+            
+            await loadBookmarks();
+            renderBookmarks();
+          } catch (error) {
+            alert('Failed to restore title: ' + error.message);
+          }
+        } else {
+          alert('Could not find the updated item. It may have been deleted.');
+        }
+      } else {
+        alert('Not enough information to restore this update operation.');
+      }
+    }
+
+  } catch (error) {
+    console.error('Error restoring changelog entry:', error);
+    alert('Failed to restore operation: ' + error.message);
+  }
 }
 
 // Helper function to convert timestamp to human-readable "time ago"
@@ -9005,21 +9198,21 @@ function setupEventListeners() {
     }
   });
 
-  // Changelog modal event listeners
-  const changelogModal = document.getElementById('changelogModal');
-  const changelogModalClose = document.getElementById('changelogModalClose');
-  const changelogModalCancel = document.getElementById('changelogModalCancel');
-  const changelogModalOverlay = changelogModal.querySelector('.modal-overlay');
+// Changelog modal event listeners
+const changelogModal = document.getElementById('changelogModal');
+const changelogModalClose = document.getElementById('changelogModalClose');
+const changelogModalCancel = document.getElementById('changelogModalCancel');
+const changelogModalOverlay = changelogModal.querySelector('.modal-overlay');
 
-  changelogModalClose.addEventListener('click', closeChangelogModal);
-  changelogModalCancel.addEventListener('click', closeChangelogModal);
-  changelogModalOverlay.addEventListener('click', closeChangelogModal);
+changelogModalClose.addEventListener('click', closeChangelogModal);
+changelogModalCancel.addEventListener('click', closeChangelogModal);
+changelogModalOverlay.addEventListener('click', closeChangelogModal);
 
-  changelogModal.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      closeChangelogModal();
-    }
-  });
+changelogModal.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeChangelogModal();
+  }
+});
 
   // BIDIRECTIONAL SYNC: Listen for bookmark changes (only in extension mode)
   // This ensures the extension automatically updates when bookmarks change in Chrome
