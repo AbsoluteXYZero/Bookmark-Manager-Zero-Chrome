@@ -18,9 +18,9 @@
 
 ## Overview
 
-Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-rich sidebar interface for managing your **native Chrome bookmarks**. No cloud sync, no self-hosting, no separate accounts—it works directly with the bookmarks already built into your browser.
+Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-rich side panel interface for managing your **native Chrome bookmarks**. It works directly with the bookmarks already built into your browser, with optional cloud sync via GitLab Snippets for backup and cross-device synchronization.
 
-Changes sync **bi-directionally and instantly**: any edits made in Bookmark Manager Zero immediately appear in Chrome's native bookmark system, and vice versa. Don't worry about accidental changes—the built-in undo feature lets you quickly restore recently deleted bookmarks.
+Changes sync **bi-directionally and instantly**: any edits made in Bookmark Manager Zero immediately appear in Chrome's native bookmark system, and vice versa. Don't worry about accidental changes—the built-in undo feature and a changelog in the settings let you quickly restore recently deleted renamed, or moved bookmarks and folders.
 
 It enhances your bookmark management experience with modern UI, advanced search, safety checking, and intelligent organization tools while keeping your data exactly where it belongs: in Chrome.
 
@@ -94,7 +94,12 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 ### Core Functionality
 - ✅ **Native Bookmark Integration** - Works directly with Chrome's bookmark system
-- ✅ **GitLab Snippet Sync** - Optional cloud backup and multi-device sync via encrypted GitLab Snippets
+- ✅ **GitLab Snippet Sync (Optional)** - Cloud backup and cross-device synchronization
+  - PAT authentication with AES-256-GCM encryption
+  - Auto-sync every 5 minutes when side panel is open + event-driven sync on changes
+  - Manual sync controls (pull/force push)
+  - Conflict detection for safe multi-device usage
+  - Side panel must stay open for background sync
 - ✅ **Modern Material Design UI** - Clean, intuitive interface with multiple themes
 - ✅ **Side Panel Interface** - Quick access via toolbar icon
 - ✅ **Real-time Sync** - Instantly reflects bookmark changes made in Chrome
@@ -169,58 +174,66 @@ Install directly from the [Chrome Web Store](https://chromewebstore.google.com/d
 4. Click "Load unpacked"
 5. Select the cloned directory
 
-## Usage
+## Getting Started
 
-### Basic Usage
-1. Open the side panel: Click the toolbar icon (bookmark icon in Chrome toolbar)
-2. Browse your bookmarks in the organized folder structure
-3. Click any bookmark to open it in a new tab
-4. Use the search bar to find specific bookmarks
+Bookmark Manager Zero offers two ways to use the extension:
 
-### Managing Bookmarks
-- **Add Bookmark:** Click the "+" button in the header
-- **Edit Bookmark:** Right-click → Edit
-- **Delete Bookmark:** Right-click → Delete (with undo support)
-- **Move Bookmark:** Drag and drop to a different folder
-- **Create Folder:** Click the folder icon in the header
+### Option 1: Native Bookmarks Mode (Default)
+- **Works directly with Chrome's built-in bookmarks** - no setup required
+- Changes sync **bidirectionally** between extension and native Chrome bookmarks
+- No account or cloud sync needed
+- Perfect for users who want enhanced bookmark management without GitLab
 
-### Search & Filter
-- **Search:** Type in the search bar to filter by title/URL
-- **Filter by Status:** Click the filter icon to show filters:
-  - **Link Status:** Live, Parked, Dead
-  - **Safety Status:** Safe, Suspicious, Unsafe, Trusted (whitelisted)
-- **Multiple Filters:** Select multiple filters simultaneously
-  - Filters in the same category use OR logic (e.g., Live + Dead shows both)
-  - Filters across categories use AND logic (e.g., Live + Safe shows only live AND safe bookmarks)
+**Just install and start using!** All features work immediately with your existing Chrome bookmarks.
 
-### Multi-Select Mode
-1. Click the grid icon to enable multi-select
-2. Click checkboxes on bookmarks/folders
-3. Use "Delete Selected" to remove multiple items at once
+### Option 2: GitLab Sync Mode (Optional)
+Add cloud backup and cross-device synchronization to your bookmarks:
 
-### Settings
-Click the gear icon to access:
-- **GitLab Snippet Sync:** Optional cloud backup and multi-device synchronization
-  - Authenticate with GitLab Personal Access Token
-  - Create new Snippet or select existing one
-  - Manual sync: Browser ↔ Snippet
-  - Change notifications with "View Changes" button
-  - Double confirmation before modifying native browser bookmarks
-- **Display Options:** Toggle title, URL, status indicators, previews, preview popup
-- **View Mode:** Switch between list and grid layouts
-- **Default Start Folder:** Choose which folder to expand on sidebar load
-- **Bookmark Changelog:** View all bookmark and folder changes with clickable URLs
-- **Cache Management:** Configure auto-clear settings
-- **API Keys:** Set up optional security API keys
+1. **Create a free [GitLab account](https://gitlab.com)** and generate a Personal Access Token (PAT):
+   - Navigate to GitLab → Settings → Access Tokens
+   - Token name: "Bookmark Manager Zero" (or any name you prefer)
+   - Scope required: **`api`** ✅
+   - Expiration: Choose your preferred date
+   - Click "Create personal access token"
+   - **⚠️ CRITICAL**: PATs display only **ONCE** - copy immediately and save to a password manager
+   - Track expiration date to avoid sync interruptions
 
-Click the theme icon to access:
-- **Theme:** Choose from 8 themes (Enhanced Blue, Enhanced Light, Enhanced Dark, Enhanced Gray, Blue, Light, Dark, Tinted)
-- **Accent Color:** Customize theme accent color
-- **Bookmark Opacity:** Adjust bookmark background transparency (0-100%)
-- **Text Color:** Customize bookmark text color with visual color picker
-- **Custom Background:** Upload and position your own background image
-- **Zoom:** Adjust bookmark content size (50% - 200%)
-- **GUI Scale:** Adjust interface element size (80% - 140%)
+2. **Configure Gitlab integration in the extension**:
+   - Click the Gitlab icon in the GUI or open extension settings (gear icon)
+   - Paste your token (must start with `glpat-` prefix)
+   - Token will be encrypted with AES-256-GCM before storage
+   - Choose to create new Snippet or connect to existing one
+
+3. **Your bookmarks sync automatically**:
+   - Changes sync across all your devices via private GitLab Snippets
+   - Still works with native Chrome bookmarks (bidirectional sync maintained)
+   - Auto-sync every 5 minutes when side panel is open
+   - Event-driven sync also triggers on bookmark/folder changes
+   - **Important**: Side panel must stay open for background sync to work
+
+**Adding Sync to Existing Bookmarks**
+
+Already using the extension? Add GitLab sync anytime:
+1. Click the GitLab icon or settings (gear icon) → GitLab Snippet Sync
+2. Enter your GitLab Personal Access Token
+3. Choose your setup option:
+   - **Create New Snippet** - Start fresh with a new snippet in GitLab
+   - **Connect to Existing Snippet** - Link to a snippet you already created
+4. **If you have local bookmarks**, you'll see a dialog with 3 options:
+   - **Keep Local Bookmarks** - Cancel setup and keep your local bookmarks unchanged
+   - **Merge Bookmarks** - Combine your local bookmarks with the snippet (recommended)
+   - **Replace with Snippet** - Use only the snippet's bookmarks
+     - Safety feature: Option to download backup before replacing
+     - Choose "Download Backup & Replace" (recommended) or "Skip Backup & Replace"
+5. After connecting, manual sync button options:
+   - **Pull** - Download and merge remote bookmarks with local
+   - **Push** (auto) - Upload local changes to remote
+   - **Force Push** - Overwrite remote completely (Shift+Click sync button)
+
+**Token Tips**
+- Any PAT with `api` scope works as long as your GitLab account is in good standing
+- The extension includes helpful error prompts to guide you if authentication issues occur
+- Keep your token secure - it's encrypted before storage but treat it like a password
 
 ### Keyboard Shortcuts
 
@@ -256,6 +269,28 @@ The extension can optionally use external services for enhanced features. **All 
 - **VirusTotal** - Comprehensive threat scanning from 70+ AV engines (500 requests/day)
 
 All external service usage is disclosed in [PRIVACY.md](PRIVACY.md).
+
+### Important Notice: GitLab API Usage
+
+**How GitLab Snippets Are Used:**
+- This extension uses GitLab Snippets as intended by GitLab: for storing structured data
+- Your bookmarks are stored in a private Snippet in your own GitLab account
+- Snippets are a legitimate GitLab feature designed for storing code, configuration, and structured data
+- The extension uses standard GitLab Snippets API endpoints documented in the official GitLab API
+
+**API Usage Considerations:**
+- **Event-driven sync**: API calls are made when you add/edit/delete bookmarks or folders
+- **Auto-sync polling**: When enabled, checks for remote changes every 5 minutes (when side panel is open)
+- **Manual sync**: Use the "Pull from Snippet" and "Push to Snippet" buttons for manual control
+- **Side panel requirement**: Side panel must remain open for background sync to work
+- **Rate limiting protection**: Built-in exponential backoff with jitter respects GitLab API limits
+- **Rate limits**: GitLab has API rate limits; typical bookmark usage stays well within limits
+
+**Best Practices:**
+- Keep the side panel open if you want automatic background sync
+- Use manual "Snippet Sync button" in the GUI to check for changes from other devices when needed
+- The extension automatically syncs when you make changes (add/edit/delete bookmarks)
+- For very large collections (>5000 bookmarks), edits will naturally sync less frequently
 
 ## How Link & Safety Checking Works
 
@@ -357,7 +392,7 @@ To prevent false positives, certain well-known trusted platforms are exempted fr
 
 These domains bypass URLhaus and other local blocklists but are still checked by Google Safe Browsing, Yandex, and VirusTotal if API keys are configured.
 
-#### Phase 2: Google Safe Browsing (Optional, Requires Free API Key)
+#### Phase 2: Google Safe Browsing (Optional, Requires API Key)
 
 If configured, URLs are checked against Google's threat database:
 
@@ -366,7 +401,7 @@ If configured, URLs are checked against Google's threat database:
 - **Rate Limit**: 10,000 requests/day (free tier)
 - **Results aggregated** with other findings (doesn't stop scanning)
 
-#### Phase 3: Yandex Safe Browsing (Optional, Requires Free API Key)
+#### Phase 3: Yandex Safe Browsing (Optional, Requires API Key)
 
 If configured, provides geographic threat diversity:
 
@@ -375,7 +410,7 @@ If configured, provides geographic threat diversity:
 - **Rate Limit**: 100,000 requests/day (free tier)
 - **Results aggregated** with other findings
 
-#### Phase 4: VirusTotal (Optional, Requires Free API Key)
+#### Phase 4: VirusTotal (Optional, Requires API Key)
 
 If configured, URLs are submitted to VirusTotal's multi-engine scanner:
 
@@ -453,32 +488,12 @@ Users can whitelist specific URLs to:
 
 ## Development
 
-### Project Structure
-```
-├── manifest.json          # Extension manifest
-├── sidepanel.html         # Main UI
-├── sidepanel.js           # Core logic (encryption, validation, UI)
-├── background.js          # Background service worker
-├── icons/                 # Extension icons
-└── PRIVACY.md            # Privacy policy
-```
-
 ### Key Technologies
 - Vanilla JavaScript (no frameworks)
 - Material Design 3 color system
 - Chrome Extensions API (Manifest V3)
 - AES-256-GCM encryption for API keys
 - CSS Grid & Flexbox
-
-### Version Management
-The extension version is centralized in `manifest.json`. All JavaScript files read the version using:
-```javascript
-const APP_VERSION = chrome.runtime.getManifest().version;
-```
-When updating the version, only `manifest.json` needs to be changed for code references.
-
-### Building
-No build process required - pure vanilla JavaScript.
 
 ## Security
 
@@ -499,18 +514,6 @@ Please report security vulnerabilities via GitLab Issues (mark as security issue
 - **Edge:** ✅ Should work (Chromium-based)
 - **Firefox:** ❌ Use [Firefox version](https://gitlab.com/AbsoluteXYZero/BMZ-Firefox)
 
-## Roadmap
-
-Planned future features:
-- [ ] **Local usage metrics** - Track bookmark access frequency and usage statistics (all data stored locally on your device, never sent online)
-
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
 
 ## Changelog
 

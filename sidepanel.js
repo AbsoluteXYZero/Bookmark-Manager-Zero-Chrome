@@ -1313,6 +1313,397 @@ async function handleCreateNewSnippet() {
   }
 }
 
+// Check if local bookmarks exist
+async function checkLocalBookmarksExist() {
+  try {
+    const tree = await chrome.bookmarks.getTree();
+    const bookmarks = getAllBookmarksFlat(tree);
+    // Consider local bookmarks to exist if there are more than just the default folders
+    return bookmarks.length > 0;
+  } catch (error) {
+    console.error('Error checking local bookmarks:', error);
+    return false;
+  }
+}
+
+// Show backup dialog before replacing bookmarks
+async function showBackupBeforeReplaceDialog() {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10003;
+    `;
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: var(--md-sys-color-surface, #1e1e1e);
+      color: var(--md-sys-color-on-surface, #e0e0e0);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    `;
+
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px; color: var(--md-sys-color-primary, #bb86fc);">
+        💾 Backup Your Bookmarks?
+      </h2>
+      <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.5;">
+        You're about to replace your local bookmarks with the snippet data. Would you like to download a backup of your current bookmarks first?
+      </p>
+      <p style="margin: 0 0 24px 0; font-size: 13px; opacity: 0.8; line-height: 1.5;">
+        This creates a safety backup that you can restore later if needed.
+      </p>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <button id="backupAndReplace" style="
+          background: var(--md-sys-color-primary-container, #3a2a4a);
+          color: var(--md-sys-color-on-primary-container, #d0bcff);
+          border: none;
+          padding: 12px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          text-align: left;
+          border-left: 4px solid var(--md-sys-color-primary, #bb86fc);
+        ">
+          <div style="font-weight: 500;">💾 Download Backup & Replace</div>
+          <div style="font-size: 0.9em; opacity: 0.8; margin-top: 4px;">
+            Save current bookmarks, then replace with snippet (recommended)
+          </div>
+        </button>
+
+        <button id="skipBackup" style="
+          background: var(--md-sys-color-surface-variant, #2a2a2a);
+          color: var(--md-sys-color-on-surface-variant, #c0c0c0);
+          border: none;
+          padding: 12px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          text-align: left;
+        ">
+          <div style="font-weight: 500;">Skip Backup & Replace</div>
+          <div style="font-size: 0.9em; opacity: 0.8; margin-top: 4px;">
+            Replace without backing up (not recommended)
+          </div>
+        </button>
+
+        <button id="cancelReplace" style="
+          background: transparent;
+          color: var(--md-sys-color-on-surface, #e0e0e0);
+          border: 1px solid var(--md-sys-color-outline, #555);
+          padding: 12px 20px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+        ">
+          Cancel
+        </button>
+      </div>
+    `;
+
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    dialog.querySelector('#backupAndReplace').addEventListener('click', () => {
+      modal.remove();
+      resolve('backup');
+    });
+
+    dialog.querySelector('#skipBackup').addEventListener('click', () => {
+      modal.remove();
+      resolve('skip');
+    });
+
+    dialog.querySelector('#cancelReplace').addEventListener('click', () => {
+      modal.remove();
+      resolve('cancel');
+    });
+  });
+}
+
+// Show merge confirmation dialog
+async function showMergeConfirmationDialog(snippetId, type) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10002;
+    `;
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: var(--md-sys-color-surface, #1e1e1e);
+      color: var(--md-sys-color-on-surface, #e0e0e0);
+      border-radius: 12px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    `;
+
+    const actionText = type === 'new' ? 'create a new snippet' : 'use this existing snippet';
+    const snippetText = type === 'new' ? 'new snippet' : 'selected snippet';
+
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; color: var(--md-sys-color-primary, #818cf8);">
+        📋 Local Bookmarks Detected
+      </h2>
+      <p style="margin-bottom: 16px;">
+        You have bookmarks stored locally. How would you like to handle them?
+      </p>
+      <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+        <button id="keepLocal" style="
+          background: var(--md-sys-color-surface-variant, #2a2a2a);
+          color: var(--md-sys-color-on-surface-variant, #aaa);
+          border: none;
+          padding: 12px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 1em;
+          text-align: left;
+          border-left: 4px solid var(--md-sys-color-secondary, #818cf8);
+        ">
+          <div style="font-weight: 500;">Keep Local Bookmarks</div>
+          <div style="font-size: 0.9em; opacity: 0.8; margin-top: 4px;">
+            Cancel setup and keep your local bookmarks unchanged
+          </div>
+        </button>
+
+        <button id="doMerge" style="
+          background: var(--md-sys-color-primary, #818cf8);
+          color: var(--md-sys-color-on-primary, #fff);
+          border: none;
+          padding: 12px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 1em;
+          text-align: left;
+          border-left: 4px solid var(--md-sys-color-primary, #818cf8);
+          font-weight: 500;
+        ">
+          <div style="font-weight: 500;">Merge Bookmarks</div>
+          <div style="font-size: 0.9em; opacity: 0.9; margin-top: 4px;">
+            Add your local bookmarks to the ${snippetText} and sync the combined result
+          </div>
+        </button>
+
+        <button id="replaceLocal" style="
+          background: var(--md-sys-color-error-container, #3a2a2a);
+          color: var(--md-sys-color-on-error-container, #ffb4ab);
+          border: none;
+          padding: 12px 16px;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 1em;
+          text-align: left;
+          border-left: 4px solid var(--md-sys-color-error, #f87171);
+        ">
+          <div style="font-weight: 500;">Replace with Snippet</div>
+          <div style="font-size: 0.9em; opacity: 0.8; margin-top: 4px;">
+            Use the ${snippetText} only (your local bookmarks will be lost)
+          </div>
+        </button>
+      </div>
+    `;
+
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    // Button handlers
+    dialog.querySelector('#keepLocal').addEventListener('click', () => {
+      modal.remove();
+      resolve('keep-local');
+    });
+
+    dialog.querySelector('#doMerge').addEventListener('click', () => {
+      modal.remove();
+      resolve('merge');
+    });
+
+    dialog.querySelector('#replaceLocal').addEventListener('click', async () => {
+      modal.remove();
+
+      // Show backup dialog before replacing
+      const shouldBackup = await showBackupBeforeReplaceDialog();
+
+      if (shouldBackup === 'cancel') {
+        resolve('keep-local'); // User cancelled, treat as keep local
+      } else if (shouldBackup === 'backup') {
+        // User wants to backup first
+        await exportBookmarks();
+        resolve('replace');
+      } else {
+        // User chose to skip backup
+        resolve('replace');
+      }
+    });
+  });
+}
+
+// Merge local bookmarks into existing snippet
+async function mergeLocalBookmarksIntoSnippet(snippetId) {
+  try {
+    console.log('[mergeLocalBookmarksIntoSnippet] Starting merge process for snippet:', snippetId);
+
+    // Get current snippet data
+    const snippetData = await readBookmarksFromSnippet(snippetId);
+    console.log('[mergeLocalBookmarksIntoSnippet] Retrieved snippet data');
+
+    // Get local Chrome bookmarks
+    const localTree = await chrome.bookmarks.getTree();
+    console.log('[mergeLocalBookmarksIntoSnippet] Retrieved local Chrome bookmarks');
+
+    // Convert Chrome bookmarks to snippet format
+    const localBookmarksInSnippetFormat = chromeBookmarksToSnippetFormat(localTree[0]);
+
+    // Merge local bookmarks into snippet data
+    const mergedTree = mergeBookmarksIntoTree(localBookmarksInSnippetFormat, snippetData);
+    console.log('[mergeLocalBookmarksIntoSnippet] Merged tree created');
+
+    // Update snippet with merged data
+    console.log('[mergeLocalBookmarksIntoSnippet] Updating snippet with merged data...');
+    await updateBookmarksInSnippet(snippetId, mergedTree, snippetData.version + 1);
+    console.log('[mergeLocalBookmarksIntoSnippet] Snippet updated successfully');
+
+  } catch (error) {
+    console.error('[mergeLocalBookmarksIntoSnippet] Error:', error);
+    throw error;
+  }
+}
+
+// Merge bookmarks from one tree into another tree
+// Preserves folder structure and merges into existing folders with same names
+function mergeBookmarksIntoTree(sourceTree, targetTree) {
+  try {
+    console.log('[mergeBookmarksIntoTree] Merging bookmarks with folder structure preservation...');
+
+    // Create a deep copy of the target tree
+    const mergedTree = JSON.parse(JSON.stringify(targetTree));
+
+    // Ensure target tree has roots
+    if (!mergedTree.roots) {
+      mergedTree.roots = {
+        bookmark_bar: { id: '1', title: 'Bookmarks Toolbar', type: 'folder', children: [] },
+        menu: { id: '2', title: 'Bookmarks Menu', type: 'folder', children: [] },
+        other: { id: '3', title: 'Other Bookmarks', type: 'folder', children: [] },
+        mobile: { id: '4', title: 'Mobile Bookmarks', type: 'folder', children: [] }
+      };
+    }
+
+    // Helper function to find folder by title in a root folder
+    const findFolderByTitle = (children, title) => {
+      if (!children) return null;
+      return children.find(child => child.type === 'folder' && child.title === title);
+    };
+
+    // Helper function to merge source folder into target folder
+    const mergeFolder = (sourceFolder, targetParentChildren) => {
+      const existingFolder = findFolderByTitle(targetParentChildren, sourceFolder.title);
+
+      if (existingFolder) {
+        // Folder exists, merge contents
+        console.log(`[mergeBookmarksIntoTree] Merging into existing folder: ${sourceFolder.title}`);
+        if (sourceFolder.children) {
+          // Recursively merge each child
+          sourceFolder.children.forEach(child => {
+            if (child.type === 'folder') {
+              mergeFolder(child, existingFolder.children);
+            } else if (child.url) {
+              // Add bookmark if it doesn't already exist (by URL)
+              const bookmarkExists = existingFolder.children?.some(existingChild =>
+                existingChild.url === child.url
+              );
+              if (!bookmarkExists) {
+                if (!existingFolder.children) existingFolder.children = [];
+                existingFolder.children.push({
+                  ...child,
+                  id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
+                  dateAdded: Date.now()
+                });
+                console.log(`[mergeBookmarksIntoTree] Added bookmark: ${child.title}`);
+              } else {
+                console.log(`[mergeBookmarksIntoTree] Skipped duplicate bookmark: ${child.title}`);
+              }
+            }
+          });
+        }
+      } else {
+        // Folder doesn't exist, add entire folder structure
+        console.log(`[mergeBookmarksIntoTree] Adding new folder: ${sourceFolder.title}`);
+        const newFolder = {
+          ...sourceFolder,
+          id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
+          dateAdded: Date.now()
+        };
+        targetParentChildren.push(newFolder);
+      }
+    };
+
+    // Merge source tree roots into target tree roots
+    if (sourceTree.roots) {
+      Object.keys(sourceTree.roots).forEach(rootKey => {
+        const sourceRoot = sourceTree.roots[rootKey];
+        const targetRoot = mergedTree.roots[rootKey];
+
+        if (sourceRoot && targetRoot && sourceRoot.children) {
+          if (!targetRoot.children) targetRoot.children = [];
+
+          sourceRoot.children.forEach(item => {
+            if (item.type === 'folder') {
+              mergeFolder(item, targetRoot.children);
+            } else if (item.url) {
+              // Add individual bookmarks, avoiding duplicates
+              const bookmarkExists = targetRoot.children.some(existingChild =>
+                existingChild.url === item.url
+              );
+              if (!bookmarkExists) {
+                targetRoot.children.push({
+                  ...item,
+                  id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
+                  dateAdded: Date.now()
+                });
+                console.log(`[mergeBookmarksIntoTree] Added individual bookmark to ${rootKey}: ${item.title}`);
+              } else {
+                console.log(`[mergeBookmarksIntoTree] Skipped duplicate bookmark in ${rootKey}: ${item.title}`);
+              }
+            }
+          });
+        }
+      });
+    }
+
+    console.log('[mergeBookmarksIntoTree] Merge complete with folder structure preservation');
+    return mergedTree;
+  } catch (error) {
+    console.error('[mergeBookmarksIntoTree] Error:', error);
+    throw error;
+  }
+}
+
 // Handle selecting an existing Snippet
 async function handleSelectExistingSnippet() {
   try {
@@ -1360,11 +1751,49 @@ async function handleSelectExistingSnippet() {
     selectBtns.forEach(btn => {
       btn.addEventListener('click', async () => {
         const selectedSnippetId = btn.dataset.snippetId;
-        snippetId = selectedSnippetId;
-        await chrome.storage.local.set({ bmz_snippet_id: snippetId });
-        updateGitLabButtonIcon();
         modal.remove();
-        showToast('Snippet connected: ' + snippetId);
+
+        // Check if local bookmarks exist
+        const hasLocalBookmarks = await checkLocalBookmarksExist();
+
+        if (hasLocalBookmarks) {
+          // Show merge confirmation dialog
+          const mergeChoice = await showMergeConfirmationDialog(selectedSnippetId, 'existing');
+
+          if (mergeChoice === 'keep-local') {
+            // User chose to cancel and keep local bookmarks
+            showToast('Cancelled. Local bookmarks unchanged.');
+            return;
+          } else if (mergeChoice === 'merge') {
+            // Merge local bookmarks into selected snippet
+            showToast('Merging local bookmarks into snippet...');
+            await mergeLocalBookmarksIntoSnippet(selectedSnippetId);
+            snippetId = selectedSnippetId;
+            await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+            updateGitLabButtonIcon();
+            showToast('Merged and connected to snippet: ' + snippetId);
+          } else if (mergeChoice === 'replace') {
+            // Replace local bookmarks with snippet data
+            snippetId = selectedSnippetId;
+            await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+            updateGitLabButtonIcon();
+
+            // Get the remote snippet data and apply it directly (full replace)
+            try {
+              const remoteData = await readBookmarksFromSnippet(selectedSnippetId);
+              await applyRemoteChangesToChrome(remoteData);
+            } catch (error) {
+              console.error('Failed to replace bookmarks from snippet:', error);
+              showToast(`Error: ${error.message}`, 'error');
+            }
+          }
+        } else {
+          // No local bookmarks, just connect
+          snippetId = selectedSnippetId;
+          await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+          updateGitLabButtonIcon();
+          showToast('Snippet connected: ' + snippetId);
+        }
       });
     });
 
@@ -1440,28 +1869,39 @@ async function syncToSnippet() {
   }
 }
 
-// Start auto-syncing Snippet every 10 minutes
-function startSnippetAutoSync() {
+// Start auto-syncing Snippet every 5 minutes
+async function startSnippetAutoSync() {
   if (snippetSyncInterval) {
     clearInterval(snippetSyncInterval);
   }
 
-  const syncInterval = 10 * 60 * 1000;
+  const syncInterval = 5 * 60 * 1000; // 5 minutes
 
+  // Perform initial sync immediately
+  if (snippetId && snippetToken && navigator.onLine) {
+    try {
+      console.log('[Snippet AutoSync] Running initial sync...');
+      await syncFromSnippet();
+    } catch (error) {
+      console.error('[Snippet AutoSync] Initial sync failed:', error);
+    }
+  }
+
+  // Then start the interval for subsequent syncs
   snippetSyncInterval = setInterval(async () => {
     if (!snippetId || !snippetToken || !navigator.onLine) {
       return;
     }
 
     try {
-      console.log('[Snippet AutoSync] Running auto-sync...');
+      console.log('[Snippet AutoSync] Running scheduled sync...');
       await syncFromSnippet();
     } catch (error) {
-      console.error('[Snippet AutoSync] Auto-sync failed:', error);
+      console.error('[Snippet AutoSync] Scheduled sync failed:', error);
     }
   }, syncInterval);
 
-  console.log('[Snippet AutoSync] Auto-sync enabled (10-minute interval)');
+  console.log('[Snippet AutoSync] Auto-sync enabled (immediate + 5-minute interval)');
 }
 
 // Stop auto-syncing Snippet
@@ -5507,11 +5947,16 @@ async function deleteFolder(id) {
     const folderInfo = await chrome.bookmarks.getSubTree(id);
     const folder = folderInfo[0];
 
+    // Deep copy folder data for changelog (chrome.bookmarks.getSubTree already includes parentId)
+    const fullData = JSON.parse(JSON.stringify(folder));
+
     // Delete the folder
     await chrome.bookmarks.removeTree(id);
 
-    // Add to changelog
-    await addChangelogEntry('delete', 'folder', folder.title || 'Untitled', null);
+    // Add to changelog (store complete folder data for restoration)
+    await addChangelogEntry('delete', 'folder', folder.title || 'Untitled', null, {
+      fullData: fullData
+    });
 
     // Show undo toast
     showUndoToast({
@@ -6470,11 +6915,16 @@ async function deleteBookmark(id) {
     const bookmarks = await chrome.bookmarks.get(id);
     const bookmark = bookmarks[0];
 
+    // Deep copy bookmark data for changelog (chrome.bookmarks.get already includes parentId)
+    const fullData = JSON.parse(JSON.stringify(bookmark));
+
     // Delete the bookmark
     await chrome.bookmarks.remove(id);
 
-    // Add to changelog
-    await addChangelogEntry('delete', 'bookmark', bookmark.title || 'Untitled', bookmark.url);
+    // Add to changelog before deleting (store complete bookmark data for restoration)
+    await addChangelogEntry('delete', 'bookmark', bookmark.title || 'Untitled', bookmark.url, {
+      fullData: fullData
+    });
 
     // Show undo toast
     showUndoToast({
@@ -7465,10 +7915,63 @@ async function restoreChangelogEntry(entryId) {
     if (!confirmed) return;
 
     if (entry.type === 'delete') {
-      // For delete operations, we can't fully restore without the original data
-      // Show a helpful message instead
-      alert('Delete operations cannot be automatically restored from the changelog.\n\nThe changelog does not store enough data to recreate deleted items.\n\nUse the undo feature immediately after deletion for full restoration.');
-      return;
+      // Check if we have the full data stored
+      if (!entry.details || !entry.details.fullData) {
+        alert('Delete operations cannot be automatically restored from the changelog.\n\nThis deletion was logged before full data storage was implemented.\n\nUse the undo feature immediately after deletion for full restoration.');
+        return;
+      }
+
+      // Restore the deleted item
+      const fullData = entry.details.fullData;
+
+      try {
+        if (entry.itemType === 'folder') {
+          // Recreate the folder with its properties
+          const newFolder = await chrome.bookmarks.create({
+            title: fullData.title,
+            parentId: fullData.parentId,
+            index: fullData.index
+          });
+
+          alert(`Folder "${fullData.title}" has been restored.\n\nNote: Child items were not restored. You may need to restore them individually from the changelog.`);
+
+          // Add a changelog entry for the restoration
+          await addChangelogEntry('restore', entry.itemType, fullData.title, null, {
+            originalOperation: 'delete',
+            restoredFrom: entry.id
+          });
+        } else {
+          // Recreate the bookmark
+          await chrome.bookmarks.create({
+            title: fullData.title,
+            url: fullData.url,
+            parentId: fullData.parentId,
+            index: fullData.index
+          });
+
+          alert(`Bookmark "${fullData.title}" has been restored successfully!`);
+
+          // Add a changelog entry for the restoration
+          await addChangelogEntry('restore', entry.itemType, fullData.title, fullData.url, {
+            originalOperation: 'delete',
+            restoredFrom: entry.id
+          });
+        }
+
+        // Refresh UI
+        await loadBookmarks();
+        await renderBookmarks();
+
+        // Close and reopen changelog modal to refresh
+        closeChangelogModal();
+        setTimeout(() => openChangelogModal(), 100);
+
+        return;
+      } catch (error) {
+        console.error('[Changelog Restore] Failed to restore deleted item:', error);
+        alert(`Failed to restore item: ${error.message}`);
+        return;
+      }
     }
 
     if (entry.type === 'move') {
