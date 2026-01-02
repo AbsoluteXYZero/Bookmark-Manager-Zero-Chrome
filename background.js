@@ -45,6 +45,33 @@ async function getDecryptedApiKey(keyName) {
   return null;
 }
 
+// Concurrency limiter to prevent overwhelming network with DNS lookups
+class ConcurrencyLimiter {
+  constructor(maxConcurrent = 10) {
+    this.maxConcurrent = maxConcurrent;
+    this.running = 0;
+    this.queue = [];
+  }
+
+  async run(fn) {
+    while (this.running >= this.maxConcurrent) {
+      await new Promise(resolve => this.queue.push(resolve));
+    }
+    this.running++;
+    try {
+      return await fn();
+    } finally {
+      this.running--;
+      const next = this.queue.shift();
+      if (next) next();
+    }
+  }
+}
+
+// Global concurrency limiter for all network requests
+// With parallel link+safety checks, actual concurrent requests can be up to 20 (10 bookmarks × 2 checks each)
+const networkLimiter = new ConcurrencyLimiter(10);
+
 // URL validation utilities inlined to avoid module loading issues
 const BLOCKED_SCHEMES = ['file', 'javascript', 'data', 'vbscript'];
 const PRIVILEGED_SCHEMES = ['chrome', 'chrome-extension'];
@@ -318,7 +345,7 @@ const checkLinkStatus = async (url, bypassCache = false) => {
 
     try {
       const corsController = new AbortController();
-      const corsTimeout = setTimeout(() => corsController.abort(), 10000);
+      const corsTimeout = setTimeout(() => corsController.abort(), 5000);
 
       response = await fetch(url, {
         method: 'HEAD',
@@ -332,7 +359,7 @@ const checkLinkStatus = async (url, bypassCache = false) => {
     } catch (corsError) {
       // CORS blocked, try no-cors mode with fresh controller
       const noCorsController = new AbortController();
-      const noCorsTimeout = setTimeout(() => noCorsController.abort(), 10000);
+      const noCorsTimeout = setTimeout(() => noCorsController.abort(), 5000);
 
       response = await fetch(url, {
         method: 'HEAD',
@@ -378,14 +405,22 @@ const checkLinkStatus = async (url, bypassCache = false) => {
     return result;
 
   } catch (error) {
-    // If HEAD fails, try GET as fallback
+    // If timeout or abort, mark as live (slow server) and skip GET fallback
+    if (error.name === 'AbortError') {
+      console.log(`[Link Check] Timeout for ${url}, marking as live (slow server)`);
+      result = 'live';
+      await setCachedResult(url, result, 'linkStatusCache');
+      return result;
+    }
+
+    // If HEAD fails for other reasons, try GET as fallback
     try {
       let fallbackResponse;
       let usedCorsFallback = false;
 
       try {
         const corsController = new AbortController();
-        const corsTimeout = setTimeout(() => corsController.abort(), 8000);
+        const corsTimeout = setTimeout(() => corsController.abort(), 5000);
 
         fallbackResponse = await fetch(url, {
           method: 'GET',
@@ -399,7 +434,7 @@ const checkLinkStatus = async (url, bypassCache = false) => {
       } catch (corsError) {
         // CORS blocked, try no-cors mode with fresh controller
         const noCorsController = new AbortController();
-        const noCorsTimeout = setTimeout(() => noCorsController.abort(), 8000);
+        const noCorsTimeout = setTimeout(() => noCorsController.abort(), 5000);
 
         fallbackResponse = await fetch(url, {
           method: 'GET',
@@ -442,7 +477,15 @@ const checkLinkStatus = async (url, bypassCache = false) => {
       await setCachedResult(url, result, 'linkStatusCache');
       return result;
     } catch (fallbackError) {
-      // Both HEAD and GET failed - link is likely dead
+      // If GET also timed out, mark as live (slow server)
+      if (fallbackError.name === 'AbortError') {
+        console.log(`[Link Check] GET fallback also timed out for ${url}, marking as live (slow server)`);
+        result = 'live';
+        await setCachedResult(url, result, 'linkStatusCache');
+        return result;
+      }
+
+      // Both HEAD and GET failed for other reasons - link is likely dead
       console.warn('Link check failed for:', url, fallbackError.message);
       result = 'dead';
       await setCachedResult(url, result, 'linkStatusCache');
@@ -457,7 +500,6 @@ let domainSourceMap = new Map(); // Track which source(s) flagged each domain
 let domainOnlyMap = new Map(); // Map of domain:port -> sources (for entries with paths like "1.2.3.4:80/malware")
 let blocklistLastUpdate = 0;
 let blocklistLoading = false; // Flag to prevent duplicate loads
-const BLOCKLIST_UPDATE_INTERVAL = 24 * 60 * 60 * 1000; // This is now superseded by the same-day check below
 
 // Helper to check if two timestamps are on the same calendar day.
 function isSameDay(timestamp1, timestamp2) {
@@ -687,7 +729,7 @@ const checkVirusTotal = async (url) => {
     const urlId = btoa(url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
     const reportController = new AbortController();
-    const reportTimeout = setTimeout(() => reportController.abort(), 15000);
+    const reportTimeout = setTimeout(() => reportController.abort(), 8000);
 
     const reportResponse = await fetch(
       `https://www.virustotal.com/api/v3/urls/${urlId}`,
@@ -1133,37 +1175,11 @@ const checkURLSafety = async (url, bypassCache = false) => {
   let result;
 
   try {
-    // If database is currently loading, wait for it to complete
-    if (blocklistLoading) {
-      console.log(`[Blocklist] Database still loading, waiting for completion...`);
-      await new Promise(resolve => {
-        const checkInterval = setInterval(() => {
-          if (!blocklistLoading) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-      });
-      console.log(`[Blocklist] Database loading complete, proceeding with scan`);
-    }
-
-    // Update database if needed (if not updated today)
-    const now = Date.now();
-    if (!isSameDay(now, blocklistLastUpdate)) {
-        console.log(`[Blocklist] Database last updated on a different day, forcing update.`);
-        await updateBlocklistDatabase();
-    }
-
-    // If database is empty and not loading, try to load it
-    if (maliciousUrlsSet.size === 0 && !blocklistLoading) {
-      console.log(`[Blocklist] Database empty, loading...`);
-      const success = await updateBlocklistDatabase();
-      if (!success) {
-        console.log(`[Blocklist] Could not load database, returning unknown`);
-        const resultObj = { status: 'unknown', sources: [] };
-        await setCachedResult(url, resultObj, 'safetyStatusCache');
-        return resultObj;
-      }
+    // Quick check: if database is empty, return unknown (don't block scanning)
+    // The background scan will ensure the database is loaded before starting
+    if (maliciousUrlsSet.size === 0) {
+      console.log(`[Blocklist] Database not loaded yet, skipping blocklist check for ${url}`);
+      // Continue with API-based checks below, don't return early
     }
 
     // Normalize URL for lookup (remove protocol, trailing slash, lowercase)
@@ -1253,44 +1269,47 @@ const checkURLSafety = async (url, bypassCache = false) => {
       return resultObj;
     }
 
-    console.log(`[Blocklist] Checking full URL: ${normalizedUrl}`);
-    console.log(`[Blocklist] Checking domain: ${domain}`);
+    // Only check blocklist if database is loaded (don't block scanning waiting for it)
+    if (maliciousUrlsSet.size > 0) {
+      console.log(`[Blocklist] Checking full URL: ${normalizedUrl}`);
+      console.log(`[Blocklist] Checking domain: ${domain}`);
 
-    // Check if full URL is in the malicious set
-    if (maliciousUrlsSet.has(normalizedUrl)) {
-      const sources = domainSourceMap.get(normalizedUrl) || [];
-      console.log(`[Blocklist] ⚠️ Full URL found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
-      const resultObj = { status: 'unsafe', sources };
-      console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
-      await setCachedResult(url, resultObj, 'safetyStatusCache');
-      return resultObj;
+      // Check if full URL is in the malicious set
+      if (maliciousUrlsSet.has(normalizedUrl)) {
+        const sources = domainSourceMap.get(normalizedUrl) || [];
+        console.log(`[Blocklist] ⚠️ Full URL found in malicious database!`);
+        console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
+        const resultObj = { status: 'unsafe', sources };
+        console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
+      }
+
+      // Also check if just the domain is flagged (entire domain compromised)
+      if (maliciousUrlsSet.has(domain)) {
+        const sources = domainSourceMap.get(domain) || [];
+        console.log(`[Blocklist] ⚠️ Domain found in malicious database!`);
+        console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
+        const resultObj = { status: 'unsafe', sources };
+        console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
+      }
+
+      // Check if domain:port appears in domainOnlyMap (for IP:port cases where blocklist has paths)
+      // Example: If blocklist has "61.163.146.63:34343/i", catch "61.163.146.63:34343/bin.sh"
+      if (domainOnlyMap.has(domain)) {
+        const sources = domainOnlyMap.get(domain);
+        console.log(`[Blocklist] ⚠️ Domain:port found in malicious database (via path-based entry)!`);
+        console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
+        const resultObj = { status: 'unsafe', sources };
+        console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
+        await setCachedResult(url, resultObj, 'safetyStatusCache');
+        return resultObj;
+      }
+
+      console.log(`[Blocklist] ✓ Neither full URL nor domain found in malicious database`);
     }
-
-    // Also check if just the domain is flagged (entire domain compromised)
-    if (maliciousUrlsSet.has(domain)) {
-      const sources = domainSourceMap.get(domain) || [];
-      console.log(`[Blocklist] ⚠️ Domain found in malicious database!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
-      const resultObj = { status: 'unsafe', sources };
-      console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
-      await setCachedResult(url, resultObj, 'safetyStatusCache');
-      return resultObj;
-    }
-
-    // Check if domain:port appears in domainOnlyMap (for IP:port cases where blocklist has paths)
-    // Example: If blocklist has "61.163.146.63:34343/i", catch "61.163.146.63:34343/bin.sh"
-    if (domainOnlyMap.has(domain)) {
-      const sources = domainOnlyMap.get(domain);
-      console.log(`[Blocklist] ⚠️ Domain:port found in malicious database (via path-based entry)!`);
-      console.log(`[Blocklist] Detected by: ${sources.join(', ')}`);
-      const resultObj = { status: 'unsafe', sources };
-      console.log(`[Safety Check] Final result for ${url}: ${resultObj.status}`);
-      await setCachedResult(url, resultObj, 'safetyStatusCache');
-      return resultObj;
-    }
-
-    console.log(`[Blocklist] ✓ Neither full URL nor domain found in malicious database`);
 
     // Continue scanning through ALL layers and aggregate findings
     // Priority: unsafe > warning > safe
@@ -1422,31 +1441,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }
     });
     return true; // Required to indicate an asynchronous response.
-  }
-
-  if (request.action === "getPageContent") {
-    fetch(request.url)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
-        }
-        return response.text();
-      })
-      .then(text => sendResponse({ content: text }))
-      .catch(error => sendResponse({ error: error.message }));
-    return true; // Required for async response
-  }
-
-  if (request.action === "openReaderView") {
-    const readerUrl = chrome.runtime.getURL(`reader.html?url=${encodeURIComponent(request.url)}`);
-    chrome.tabs.create({ url: readerUrl });
-    // This message doesn't need a response.
-  }
-
-  if (request.action === "openPrintView") {
-    const printUrl = chrome.runtime.getURL(`print.html?url=${encodeURIComponent(request.url)}`);
-    chrome.tabs.create({ url: printUrl });
-    // This message doesn't need a response.
   }
 
   // Background scan control
@@ -1685,7 +1679,7 @@ function queueResult(result) {
 // Process the background scan queue in batches
 async function processBackgroundScanQueue() {
   const BATCH_SIZE = 10;
-  const BATCH_DELAY = 300;
+  const BATCH_DELAY = 100;
 
   while (backgroundScanState.bookmarksQueue.length > 0 && !backgroundScanState.isCancelled) {
     // Get next batch
@@ -1706,20 +1700,39 @@ async function processBackgroundScanQueue() {
           title: bookmark.title
         };
 
+        // Check link status and safety status in parallel with concurrency limiting
+        // Each check gets its own slot in the limiter for true parallelism
+        console.log(`[Scan] Starting check for: ${bookmark.title} (${backgroundScanState.scannedCount + 1}/${backgroundScanState.totalBookmarks})`);
+
+        const checks = [];
+
         // Check link status
         if (backgroundScanState.linkCheckingEnabled) {
-          result.linkStatus = await checkLinkStatus(bookmark.url, backgroundScanState.bypassCache);
+          checks.push(
+            networkLimiter.run(async () => {
+              result.linkStatus = await checkLinkStatus(bookmark.url, backgroundScanState.bypassCache);
+            })
+          );
         }
 
         // Check safety status
         if (backgroundScanState.safetyCheckingEnabled) {
-          const safetyResult = await checkURLSafety(bookmark.url, backgroundScanState.bypassCache);
-          result.safetyStatus = safetyResult.status;
-          result.safetySources = safetyResult.sources;
+          checks.push(
+            networkLimiter.run(async () => {
+              const safetyResult = await checkURLSafety(bookmark.url, backgroundScanState.bypassCache);
+              result.safetyStatus = safetyResult.status;
+              result.safetySources = safetyResult.sources;
+            })
+          );
         }
 
+        // Wait for both to complete
+        await Promise.all(checks);
+
+        console.log(`[Scan] Completed check for: ${bookmark.title}`);
+
         backgroundScanState.scannedCount++;
-        
+
         // Instead of sending message here, queue the result
         queueResult(result);
 
