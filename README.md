@@ -1,18 +1,29 @@
 <div align="center">
-
 <img src="icons/bookmark-96.png" alt="Bookmark Manager Zero Logo" width="128" height="128">
 
-# Bookmark Manager Zero
+<h1 align="center">Bookmark Manager Zero</h1>
 
-**A modern, privacy-focused interface for managing your Chrome bookmarks.**
+<p align="center">
+  <strong>A modern, privacy-focused interface for managing your Chrome bookmarks.</strong>
+</p>
 
-![Version](https://img.shields.io/badge/version-3.0-blue)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Chrome](https://img.shields.io/badge/chrome-compatible-blue)](https://chrome.google.com/webstore/)
+<p align="center">
+  <img src="https://img.shields.io/badge/version-3.0-blue" alt="Version">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
+  </a>
+  <a href="https://chrome.google.com/webstore/">
+    <img src="https://img.shields.io/badge/chrome-compatible-blue" alt="Chrome">
+  </a>
+</p>
 
 <br>
 
-[![Available in the Chrome Web Store](https://developer.chrome.com/static/docs/webstore/branding/image/HRs9MPufa1J1h5glNhut.png)](https://chromewebstore.google.com/detail/bookmark-manager-zero/jbpiddimkkdfhoellbiegdopfpilnclc)
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/bookmark-manager-zero/jbpiddimkkdfhoellbiegdopfpilnclc">
+    <img src="https://developer.chrome.com/static/docs/webstore/branding/image/HRs9MPufa1J1h5glNhut.png" alt="Available in the Chrome Web Store">
+  </a>
+</p>
 
 </div>
 
