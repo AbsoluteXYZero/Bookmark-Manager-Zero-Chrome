@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.2-blue" alt="Version">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   </a>
@@ -553,7 +553,36 @@ Please report security vulnerabilities via GitLab Issues (mark as security issue
 
 ## Changelog
 
-### v3.0 (Current) - Major Improvements & Performance Optimizations
+### v3.2 (Current) - Real-time Progress Updates (All Scan Types)
+
+**Improvements:**
+- 📊 **Universal Real-time Progress** - ALL scan types now update progress after every individual bookmark
+  - Fixed folder expansion scanning (autoCheckBookmarkStatuses) to update per bookmark instead of per batch
+  - Fixed rescan all bookmarks to update per bookmark
+  - Fixed background scans to update per bookmark
+  - Applies to all scan operations for consistent, responsive feedback
+
+---
+
+### v3.1 - Session Persistence & Progress Updates
+
+**New Features:**
+- 💾 **Session State Persistence** - Bookmark Manager Zero now remembers where you left off when you reopen it
+  - Restores scroll position to exactly where you were
+  - Remembers which folders were expanded/collapsed
+  - Preserves your search query and active filters
+  - Session clears when browser closes for privacy
+- 📊 **Real-time Scan Progress** - Progress counter now updates after every bookmark scanned instead of every 10
+  - More responsive and accurate progress feedback during scans
+  - Consistent behavior across all scan operations
+
+**Bug Fixes:**
+- 🐛 **Fixed Firefox Stop Scan Button** - Stop scanning button now works correctly in Firefox version
+  - Corrected message action name mismatch between sidebar and background script
+
+---
+
+### v3.0 - Major Improvements & Performance Optimizations
 
 **Code Quality & Bug Fixes:**
 - 🔧 **Fixed Version Display** - Updated hardcoded version in HTML to use dynamic APP_VERSION from manifest

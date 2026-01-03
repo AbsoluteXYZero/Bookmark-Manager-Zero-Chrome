@@ -1733,6 +1733,13 @@ async function processBackgroundScanQueue() {
 
         backgroundScanState.scannedCount++;
 
+        // Send progress update after each bookmark
+        chrome.runtime.sendMessage({
+          type: 'scanProgress',
+          scanned: backgroundScanState.scannedCount,
+          total: backgroundScanState.totalBookmarks,
+        }).catch(() => {});
+
         // Instead of sending message here, queue the result
         queueResult(result);
 
@@ -1740,6 +1747,14 @@ async function processBackgroundScanQueue() {
       } catch (error) {
         console.error(`[Background Scan] Error checking bookmark ${bookmark.id}:`, error);
         backgroundScanState.scannedCount++;
+
+        // Send progress update after each bookmark (even on error)
+        chrome.runtime.sendMessage({
+          type: 'scanProgress',
+          scanned: backgroundScanState.scannedCount,
+          total: backgroundScanState.totalBookmarks,
+        }).catch(() => {});
+
         const errorResult = {
           id: bookmark.id,
           url: bookmark.url,
@@ -1754,13 +1769,6 @@ async function processBackgroundScanQueue() {
     });
 
     await Promise.all(checkPromises);
-
-    // After a batch is processed, send a progress update
-    chrome.runtime.sendMessage({
-      type: 'scanProgress',
-      scanned: backgroundScanState.scannedCount,
-      total: backgroundScanState.totalBookmarks,
-    }).catch(() => {});
 
     // Wait before next batch
     if (backgroundScanState.bookmarksQueue.length > 0) {

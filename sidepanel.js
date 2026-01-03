@@ -2880,6 +2880,7 @@ async function init() {
   await loadBookmarks();
   cleanupSafetyHistory(); // Clean up stale entries on sidebar load
   await restoreCachedBookmarkStatuses();
+  await restoreSessionState(); // Restore previous session (scroll, expanded folders, search)
   populateDefaultFolderSelect();
   await expandToDefaultFolder();
   setupEventListeners();
@@ -2919,6 +2920,77 @@ async function loadAutoClearSetting() {
   } catch (error) {
     console.error('Error loading auto-clear setting:', error);
   }
+}
+
+// ============================================================================
+// SESSION STATE PERSISTENCE
+// ============================================================================
+
+// Save current session state (scroll position, expanded folders, search, filters)
+async function saveSessionState() {
+  try {
+    const sessionState = {
+      scrollPosition: bookmarkList?.scrollTop || 0,
+      expandedFolders: Array.from(expandedFolders),
+      searchTerm: searchTerm,
+      activeFilters: activeFilters,
+      timestamp: Date.now()
+    };
+    // Use session storage so it clears when browser closes
+    await chrome.storage.session.set({ sessionState });
+  } catch (error) {
+    console.error('Error saving session state:', error);
+  }
+}
+
+// Restore previous session state
+async function restoreSessionState() {
+  try {
+    const result = await chrome.storage.session.get('sessionState');
+    if (result.sessionState) {
+      const state = result.sessionState;
+
+      // Session persists until browser is closed (no expiration)
+      // The session will be cleared when the browser closes
+
+      // Restore expanded folders
+      if (state.expandedFolders && Array.isArray(state.expandedFolders)) {
+        expandedFolders = new Set(state.expandedFolders);
+      }
+
+      // Restore search term
+      if (state.searchTerm) {
+        searchTerm = state.searchTerm;
+        if (searchInput) {
+          searchInput.value = state.searchTerm;
+        }
+      }
+
+      // Restore active filters
+      if (state.activeFilters && Array.isArray(state.activeFilters)) {
+        activeFilters = state.activeFilters;
+      }
+
+      // Restore scroll position after rendering
+      if (state.scrollPosition && bookmarkList) {
+        // Use setTimeout to ensure rendering is complete
+        setTimeout(() => {
+          bookmarkList.scrollTop = state.scrollPosition;
+        }, 100);
+      }
+
+      console.log('Session state restored');
+    }
+  } catch (error) {
+    console.error('Error restoring session state:', error);
+  }
+}
+
+// Debounced save to avoid excessive storage writes
+let saveStateTimeout;
+function saveSessionStateDebounced() {
+  clearTimeout(saveStateTimeout);
+  saveStateTimeout = setTimeout(saveSessionState, 500);
 }
 
 // Load theme preference
@@ -3700,6 +3772,10 @@ async function autoCheckBookmarkStatuses() {
           result.safetySources = safetyResult.sources;
         }
 
+        // Update progress immediately after each bookmark completes
+        scannedCount++;
+        if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
+
         return result;
       } catch (error) {
         console.error(`Error checking bookmark ${item.id} (${item.url}):`, error);
@@ -3709,6 +3785,11 @@ async function autoCheckBookmarkStatuses() {
           errorResult.safetyStatus = 'unknown';
           errorResult.safetySources = [];
         }
+
+        // Update progress even on error
+        scannedCount++;
+        if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
+
         return errorResult;
       }
     });
@@ -3723,10 +3804,6 @@ async function autoCheckBookmarkStatuses() {
         safetySources: result.safetySources
       });
     });
-
-    // Update progress in status bar
-    scannedCount += batch.length;
-    if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
 
     // Wait before processing next batch (except for the last batch)
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
@@ -5159,6 +5236,9 @@ function toggleFolder(folderId, folderElement) {
       console.log(`[Folder Scan Cache] Folder ${folderId} already scanned ${daysAgo} day(s) ago, skipping`);
     }
   }
+
+  // Save session state when folder is toggled
+  saveSessionStateDebounced();
 
   // Re-render to reflect changes
   renderBookmarks();
@@ -7858,6 +7938,7 @@ function setupEventListeners() {
   searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value;
     renderBookmarks();
+    saveSessionStateDebounced();
   });
 
   // Filter toggle
@@ -7945,8 +8026,16 @@ function setupEventListeners() {
       }
 
       renderBookmarks();
+      saveSessionStateDebounced();
     });
   });
+
+  // Save scroll position when user scrolls
+  if (bookmarkList) {
+    bookmarkList.addEventListener('scroll', () => {
+      saveSessionStateDebounced();
+    });
+  }
 
   // QR Code button - generate QR for current page URL
   if (qrCodeBtn) {
