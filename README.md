@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.2-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.6-blue" alt="Version">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   </a>
@@ -168,6 +168,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - 📋 **Duplicate Detection** - Find and manage duplicate bookmarks
 - ⏮️ **Undo System** - Restore recently deleted bookmarks
 - 📜 **Bookmark Changelog** - Track all bookmark and folder changes (creates, moves, deletes, renames) with persistent history
+- 💾 **Pre-Sync Snapshot Protection** - Automatic snapshots before sync operations with one-click restore to undo mistaken syncs
 - 🌍 **Favicon Display** - Show website icons
 
 ## Installation
@@ -553,7 +554,55 @@ Please report security vulnerabilities via GitLab Issues (mark as security issue
 
 ## Changelog
 
-### v3.2 (Current) - Real-time Progress Updates (All Scan Types)
+### v3.6 (Current) - Pre-Sync Snapshot & Restore
+
+**New Features:**
+- 💾 **Pre-Sync Snapshot Protection** - Automatic safety net for sync operations
+  - Creates complete bookmark snapshot before destructive sync operations (Pull Remote to Local, Bidirectional Merge)
+  - Stores full bookmark tree state before replacing with remote data
+  - Allows one-click restoration to pre-sync state if sync was done mistakenly
+  - Accessible via changelog with prominent "Restore Pre-Sync Bookmarks" button
+  - Clears old changelog entries (invalid IDs after sync) automatically
+  - Prevents data loss from accidental sync operations
+
+**How It Works:**
+- When you perform "Pull Remote to Local" or "Bidirectional Merge", a snapshot is automatically created
+- Changelog shows sync operation with orange sync icon and restore button
+- Click "Restore Pre-Sync Bookmarks" to undo the sync and restore your previous bookmarks
+- Confirms before restoration with clear warning about replacing current bookmarks
+- Works across all sync operations that replace bookmark IDs
+
+**User Experience:**
+- Clear visual indicators in changelog (orange sync icon)
+- Detailed confirmation dialogs prevent accidental restoration
+- Full transparency about what will be replaced
+- No manual backups needed - automatic protection for every sync
+
+---
+
+### v3.5 - Pretty-Printed Snippets
+
+**Improvements:**
+- 📄 **Pretty-Printed JSON Snippets** - GitLab snippets now use formatted JSON for better readability
+  - Changed from single-line compact JSON to pretty-printed format with 2-space indentation at sidepanel.js:820
+  - Matches Firefox version formatting for consistency
+  - Makes snippet content much easier to read and debug when viewing in GitLab
+  - All future snippet creations and updates will use formatted JSON
+
+---
+
+### v3.4 - GitLab Merge Bug Fix
+
+**Bug Fixes:**
+- 🐛 **Fixed GitLab Snippet Merge Error** - Resolved "No Snippet ID provided" error when merging local bookmarks into snippet
+  - Fixed parameter order mismatch in `updateBookmarksInSnippet()` function call at sidepanel.js:1499
+  - Fixed global `snippetId` variable being set after merge operation instead of before at sidepanel.js:1680-1681
+  - Merge operation now properly sets snippet ID before attempting to update
+  - Ensures smooth GitLab sync setup when merging local bookmarks with existing snippets
+
+---
+
+### v3.3 - Real-time Progress Updates (All Scan Types)
 
 **Improvements:**
 - 📊 **Universal Real-time Progress** - ALL scan types now update progress after every individual bookmark

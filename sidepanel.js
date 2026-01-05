@@ -125,12 +125,84 @@ function hideSuccessToast() {
 }
 
 // General toast notification
-function showToast(message, type = 'success') {
-  if (type === 'error') {
-    showErrorToast('Error', message);
-  } else {
-    showSuccessToast(message);
+// New toast system - stacks from bottom
+let toastContainer;
+let toastIdCounter = 0;
+
+function initToastSystem() {
+  toastContainer = document.getElementById('toastContainer');
+}
+
+function showToast(message, type = 'success', duration = 5000) {
+  if (!toastContainer) {
+    initToastSystem();
   }
+
+  const toastId = `toast-${toastIdCounter++}`;
+
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.id = toastId;
+
+  // Icon based on type
+  let icon = '';
+  if (type === 'success') {
+    icon = '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0; color: #22c55e;"><path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M11,16.5L6.5,12L7.91,10.59L11,13.67L16.59,8.09L18,9.5L11,16.5Z"/></svg>';
+  } else if (type === 'error') {
+    icon = '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0; color: #dc2626;"><path d="M12,2L1,21H23M12,6L19.53,19H4.47M11,10V14H13V10M11,16V18H13V16"/></svg>';
+  } else {
+    icon = '<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="flex-shrink: 0; color: #3b82f6;"><path d="M13,9H11V7H13M13,17H11V11H13M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>';
+  }
+
+  toast.innerHTML = `
+    <div class="toast-content">
+      ${icon}
+      <div style="flex: 1;">
+        <div style="font-weight: 600;">${message}</div>
+      </div>
+      <div class="toast-actions">
+        <button class="toast-dismiss">×</button>
+      </div>
+    </div>
+  `;
+
+  // Add to container (inserts at bottom, pushes others up)
+  toastContainer.appendChild(toast);
+
+  // Add click listener to dismiss button
+  const dismissBtn = toast.querySelector('.toast-dismiss');
+  if (dismissBtn) {
+    dismissBtn.addEventListener('click', () => removeToast(toastId));
+  }
+
+  // Auto-remove after duration
+  if (duration > 0) {
+    setTimeout(() => removeToast(toastId), duration);
+  }
+
+  return toastId;
+}
+
+function removeToast(toastId) {
+  const toast = document.getElementById(toastId);
+  if (!toast) return;
+
+  toast.classList.add('removing');
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.parentNode.removeChild(toast);
+    }
+  }, 300); // Match animation duration
+}
+
+function showSuccessToast(message) {
+  showToast(message, 'success');
+}
+
+function showErrorToast(title, message) {
+  const fullMessage = title && message ? `${title}: ${message}` : (message || title);
+  showToast(fullMessage, 'error', 10000);
 }
 
 // Log error to browser storage
@@ -310,16 +382,55 @@ async function chromeBookmarksToSnippetFormat(chromeTree) {
     }
   }
 
-  // Add empty menu folder for compatibility with website/Firefox
-  // Chrome doesn't have a native "Bookmarks Menu" folder
-  roots.menu = {
-    id: 'menu',
-    title: 'Bookmarks Menu',
-    name: 'Bookmarks Menu',
-    type: 'folder',
-    dateAdded: Date.now(),
-    children: []
-  };
+  // Extract "Bookmarks Menu" and "Mobile Bookmarks" from "Other Bookmarks" if they exist
+  // These are stored as subfolders in Chrome but should be root folders in the snippet for Firefox compatibility
+  if (roots.other && roots.other.children) {
+    const otherChildren = roots.other.children;
+
+    // Find and extract "Bookmarks Menu" folder
+    const menuFolderIndex = otherChildren.findIndex(child =>
+      child.type === 'folder' && child.title === 'Bookmarks Menu'
+    );
+    if (menuFolderIndex !== -1) {
+      const menuFolder = otherChildren.splice(menuFolderIndex, 1)[0];
+      roots.menu = {
+        id: 'menu',
+        title: 'Bookmarks Menu',
+        name: 'Bookmarks Menu',
+        type: 'folder',
+        dateAdded: menuFolder.dateAdded,
+        children: menuFolder.children
+      };
+    }
+
+    // Find and extract "Mobile Bookmarks" folder
+    const mobileFolderIndex = otherChildren.findIndex(child =>
+      child.type === 'folder' && child.title === 'Mobile Bookmarks'
+    );
+    if (mobileFolderIndex !== -1) {
+      const mobileFolder = otherChildren.splice(mobileFolderIndex, 1)[0];
+      roots.mobile = {
+        id: 'mobile',
+        title: 'Mobile Bookmarks',
+        name: 'Mobile Bookmarks',
+        type: 'folder',
+        dateAdded: mobileFolder.dateAdded,
+        children: mobileFolder.children
+      };
+    }
+  }
+
+  // Add empty menu folder if it wasn't found (for compatibility with website/Firefox)
+  if (!roots.menu) {
+    roots.menu = {
+      id: 'menu',
+      title: 'Bookmarks Menu',
+      name: 'Bookmarks Menu',
+      type: 'folder',
+      dateAdded: Date.now(),
+      children: []
+    };
+  }
 
   const snippetData = {
     version: 1,
@@ -817,7 +928,7 @@ async function createBookmarkSnippet(bookmarkTree = null) {
         files: [
           {
             file_path: 'bookmarks.json',
-            content: JSON.stringify(tree)
+            content: JSON.stringify(tree, null, 2)
           }
         ]
       })
@@ -1496,7 +1607,7 @@ async function mergeLocalBookmarksIntoSnippet(snippetId) {
 
     // Update snippet with merged data
     console.log('[mergeLocalBookmarksIntoSnippet] Updating snippet with merged data...');
-    await updateBookmarksInSnippet(snippetId, mergedTree, snippetData.version + 1);
+    await updateBookmarksInSnippet(mergedTree, snippetData.version + 1);
     console.log('[mergeLocalBookmarksIntoSnippet] Snippet updated successfully');
 
   } catch (error) {
@@ -1614,6 +1725,47 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
   }
 }
 
+// Bidirectional merge: merges both local and remote changes together
+async function mergeBidirectional() {
+  try {
+    showToast('Merging local and remote bookmarks...', 'info');
+
+    // Get both trees
+    const remoteData = await readBookmarksFromSnippet(snippetId);
+    const localTree = await chrome.bookmarks.getTree();
+    const localInSnippetFormat = await chromeBookmarksToSnippetFormat(localTree);
+
+    // STEP 1: Take a snapshot of current bookmarks before destructive merge
+    const preSyncSnapshot = JSON.parse(JSON.stringify(localInSnippetFormat));
+
+    // STEP 2: Clear all old changelog entries (they will have invalid IDs after merge)
+    await clearChangelog();
+
+    // STEP 3: Add a special changelog entry for this merge operation with full snapshot
+    await addChangelogEntry('pre-sync-snapshot', 'sync', 'Bidirectional Merge', null, {
+      snapshot: preSyncSnapshot,
+      timestamp: Date.now(),
+      operation: 'Bidirectional Merge'
+    });
+
+    // Merge in both directions
+    // First: merge remote into local
+    const remoteIntoLocal = mergeBookmarksIntoTree(remoteData, localInSnippetFormat);
+
+    // Second: merge local into the result (to ensure we don't lose any local changes)
+    const fullyMerged = mergeBookmarksIntoTree(localInSnippetFormat, remoteIntoLocal);
+
+    // Apply merged result to both local and remote (skip snapshot since we already took one above)
+    await applyRemoteChangesToChrome(fullyMerged, true);
+    await updateBookmarksInSnippet(fullyMerged);
+
+    showToast('Merge completed successfully! All bookmarks preserved.', 'success');
+  } catch (error) {
+    console.error('[MergeBidirectional] Error:', error);
+    showToast(`Merge failed: ${error.message}`, 'error');
+  }
+}
+
 // Handle selecting an existing Snippet
 async function handleSelectExistingSnippet() {
   try {
@@ -1677,9 +1829,9 @@ async function handleSelectExistingSnippet() {
           } else if (mergeChoice === 'merge') {
             // Merge local bookmarks into selected snippet
             showToast('Merging local bookmarks into snippet...');
-            await mergeLocalBookmarksIntoSnippet(selectedSnippetId);
             snippetId = selectedSnippetId;
             await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+            await mergeLocalBookmarksIntoSnippet(selectedSnippetId);
             updateGitLabButtonIcon();
             showToast('Merged and connected to snippet: ' + snippetId);
           } else if (mergeChoice === 'replace') {
@@ -1946,10 +2098,43 @@ function calculateBookmarkDiff(localTree, remoteTree) {
   const localMap = new Map();
   const remoteMap = new Map();
 
-  // Recursively map all items by ID
+  const rootFolderIds = ['0', '1', '2', '3'];
+
+  // Normalize folder titles to handle Chrome vs Firefox naming differences
+  const normalizeTitle = (title) => {
+    // Treat empty string and "Untitled" as equivalent (empty)
+    if (!title || title === 'Untitled' || title === 'Untitled Folder') {
+      return '';
+    }
+
+    const normalized = {
+      'Bookmarks Toolbar': 'Bookmarks bar',   // Firefox → Chrome
+      'Bookmarks bar': 'Bookmarks bar',        // Chrome → Chrome
+      'Other Bookmarks': 'Other bookmarks',    // Normalize to Chrome's lowercase
+      'Other bookmarks': 'Other bookmarks',    // Chrome → Chrome
+      'Mobile Bookmarks': 'Mobile Bookmarks',
+      'Bookmarks Menu': 'Bookmarks Menu'
+    };
+    return normalized[title] || title;
+  };
+
+  // Recursively map all items by content-based key (not ID, since Chrome/Firefox use different IDs)
   const mapItems = (node, map, parentPath = '') => {
-    const path = parentPath ? `${parentPath}/${node.title || node.id}` : (node.title || node.id);
-    map.set(node.id, { node, path, parentId: node.parentId || null });
+    // Normalize title for consistent paths, then build path
+    const normalizedTitle = normalizeTitle(node.title || '');
+    const path = parentPath ? `${parentPath}/${normalizedTitle}` : normalizedTitle;
+
+    // Don't include root folders themselves in the comparison, only their contents
+    if (!rootFolderIds.includes(node.id)) {
+      // Use content-based key instead of ID
+      const isBookmark = node.url || node.type === 'bookmark';
+      const key = isBookmark
+        ? `bookmark:${node.url}:${path}`
+        : `folder:${path}`;
+
+      map.set(key, { node, path, parentId: node.parentId || null, originalId: node.id });
+    }
+
     if (node.children) {
       node.children.forEach(child => mapItems(child, map, path));
     }
@@ -1971,11 +2156,12 @@ function calculateBookmarkDiff(localTree, remoteTree) {
     }
   }
 
+
   // Find added (in remote but not in local)
-  remoteMap.forEach((remoteItem, id) => {
-    if (!localMap.has(id)) {
+  remoteMap.forEach((remoteItem, key) => {
+    if (!localMap.has(key)) {
       diff.added.push({
-        id: remoteItem.node.id,
+        id: remoteItem.originalId,
         title: remoteItem.node.title,
         path: remoteItem.path,
         type: remoteItem.node.type || (remoteItem.node.url ? 'bookmark' : 'folder'),
@@ -1985,10 +2171,10 @@ function calculateBookmarkDiff(localTree, remoteTree) {
   });
 
   // Find removed (in local but not in remote)
-  localMap.forEach((localItem, id) => {
-    if (!remoteMap.has(id)) {
+  localMap.forEach((localItem, key) => {
+    if (!remoteMap.has(key)) {
       diff.removed.push({
-        id: localItem.node.id,
+        id: localItem.originalId,
         title: localItem.node.title,
         path: localItem.path,
         type: localItem.node.url ? 'bookmark' : 'folder',
@@ -1998,16 +2184,16 @@ function calculateBookmarkDiff(localTree, remoteTree) {
   });
 
   // Find moved/modified (in both but different)
-  localMap.forEach((localItem, id) => {
-    const remoteItem = remoteMap.get(id);
+  localMap.forEach((localItem, key) => {
+    const remoteItem = remoteMap.get(key);
     if (remoteItem) {
       const localNode = localItem.node;
       const remoteNode = remoteItem.node;
 
-      // Check if moved (different parent)
-      if (localItem.parentId !== remoteItem.parentId) {
+      // Check if the path changed (item moved to different folder)
+      if (localItem.path !== remoteItem.path) {
         diff.moved.push({
-          id,
+          id: localItem.originalId,
           title: localNode.title,
           from: localItem.path,
           to: remoteItem.path,
@@ -2015,12 +2201,15 @@ function calculateBookmarkDiff(localTree, remoteTree) {
         });
       }
 
-      // Check if modified (different title or URL), ignoring case-only title differences
-      const titleDiffers = localNode.title?.toLowerCase() !== remoteNode.title?.toLowerCase();
+      // Check if modified (different title or URL)
+      // Normalize titles to ignore differences like empty string vs "Untitled"
+      const normalizedLocalTitle = normalizeTitle(localNode.title || '');
+      const normalizedRemoteTitle = normalizeTitle(remoteNode.title || '');
+      const titleDiffers = normalizedLocalTitle !== normalizedRemoteTitle;
       const urlDiffers = localNode.url !== remoteNode.url;
       if (titleDiffers || urlDiffers) {
         diff.modified.push({
-          id,
+          id: localItem.originalId,
           oldTitle: localNode.title,
           newTitle: remoteNode.title,
           oldUrl: localNode.url,
@@ -2085,23 +2274,31 @@ function snippetFormatToChromeBookmarks(snippetData) {
       otherFolder.children.push(...snippetData.roots.other.children);
     }
 
-    // Add "Bookmarks Menu" children in a subfolder to keep them organized
+    // Add "Bookmarks Menu" children in a subfolder
     if (snippetData.roots.menu && snippetData.roots.menu.children && snippetData.roots.menu.children.length > 0) {
       otherFolder.children.push({
         id: 'menu_imported',
-        title: 'Bookmarks Menu (imported)',
-        name: 'Bookmarks Menu (imported)',
+        title: 'Bookmarks Menu',
+        name: 'Bookmarks Menu',
         type: 'folder',
         dateAdded: Date.now(),
         children: snippetData.roots.menu.children
       });
     }
 
-    chromeRoots.push(convertNode(otherFolder, '0'));
-
-    if (snippetData.roots.mobile) {
-      chromeRoots.push(convertNode({ ...snippetData.roots.mobile, id: '3' }, '0'));
+    // Add "Mobile Bookmarks" children in a subfolder
+    if (snippetData.roots.mobile && snippetData.roots.mobile.children && snippetData.roots.mobile.children.length > 0) {
+      otherFolder.children.push({
+        id: 'mobile_imported',
+        title: 'Mobile Bookmarks',
+        name: 'Mobile Bookmarks',
+        type: 'folder',
+        dateAdded: Date.now(),
+        children: snippetData.roots.mobile.children
+      });
     }
+
+    chromeRoots.push(convertNode(otherFolder, '0'));
   }
 
   return [{
@@ -2112,7 +2309,7 @@ function snippetFormatToChromeBookmarks(snippetData) {
 }
 
 // Apply remote changes to local Chrome bookmarks
-async function applyRemoteChangesToChrome(remoteSnippetData) {
+async function applyRemoteChangesToChrome(remoteSnippetData, skipSnapshot = false) {
   // This is a DESTRUCTIVE operation - it will override local bookmarks
   // Show double confirmation dialog
   return new Promise((resolve) => {
@@ -2169,6 +2366,22 @@ async function applyRemoteChangesToChrome(remoteSnippetData) {
         // Get current bookmark tree
         const currentTree = await chrome.bookmarks.getTree();
 
+        // Only create snapshot if not already done (e.g., by merge operation)
+        if (!skipSnapshot) {
+          // STEP 1: Take a snapshot of current bookmarks before destructive sync
+          const preSyncSnapshot = await chromeBookmarksToSnippetFormat(currentTree);
+
+          // STEP 2: Clear all old changelog entries (they will have invalid IDs after sync)
+          await clearChangelog();
+
+          // STEP 3: Add a special changelog entry for this sync operation with full snapshot
+          await addChangelogEntry('pre-sync-snapshot', 'sync', 'Pull Remote to Local', null, {
+            snapshot: preSyncSnapshot,
+            timestamp: Date.now(),
+            operation: 'Pull Remote to Local'
+          });
+        }
+
         // Remove all existing bookmarks (except roots)
         if (currentTree[0] && currentTree[0].children) {
           for (const root of currentTree[0].children) {
@@ -2212,18 +2425,23 @@ async function applyRemoteChangesToChrome(remoteSnippetData) {
             await createNodes(remoteSnippetData.roots.other.children, '2');
           }
 
-          // Import "Bookmarks Menu" into "Other Bookmarks" as a subfolder
-          // Chrome doesn't have a native "Bookmarks Menu" folder like Firefox
+          // Chrome doesn't have native "Bookmarks Menu" or "Mobile Bookmarks" folders like Firefox
+          // Create them as subfolders in "Other Bookmarks"
           if (remoteSnippetData.roots.menu && remoteSnippetData.roots.menu.children && remoteSnippetData.roots.menu.children.length > 0) {
+            console.log('[SYNC] Creating Bookmarks Menu folder (NEW CODE v20260104)');
             const menuFolder = await chrome.bookmarks.create({
               parentId: '2',
-              title: 'Bookmarks Menu (imported)'
+              title: 'Bookmarks Menu'
             });
             await createNodes(remoteSnippetData.roots.menu.children, menuFolder.id);
           }
 
-          if (remoteSnippetData.roots.mobile && remoteSnippetData.roots.mobile.children) {
-            await createNodes(remoteSnippetData.roots.mobile.children, '3');
+          if (remoteSnippetData.roots.mobile && remoteSnippetData.roots.mobile.children && remoteSnippetData.roots.mobile.children.length > 0) {
+            const mobileFolder = await chrome.bookmarks.create({
+              parentId: '2',
+              title: 'Mobile Bookmarks'
+            });
+            await createNodes(remoteSnippetData.roots.mobile.children, mobileFolder.id);
           }
         }
 
@@ -2328,14 +2546,22 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
   }
 
   content += `
-    <div style="display: flex; gap: 12px; margin-top: 20px;">
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
       ${hasChanges ? `
-        <button id="applyRemoteChanges" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
-          Apply Changes to Local Bookmarks
+        <button id="mergeButton" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-tertiary, #4caf50); color: var(--md-sys-color-on-tertiary, #fff); cursor: pointer; font-size: 14px; font-weight: 600;">
+          Merge (Recommended)
         </button>
+        <div style="display: flex; gap: 12px;">
+          <button id="pushLocalToRemote" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #90caf9); color: var(--md-sys-color-on-primary, #000); cursor: pointer; font-size: 14px;">
+            Push Local to Remote
+          </button>
+          <button id="applyRemoteChanges" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
+            Pull Remote to Local
+          </button>
+        </div>
       ` : ''}
-      <button id="closeDiffDialog" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
-        Close
+      <button id="closeDiffDialog" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+        Cancel
       </button>
     </div>
   `;
@@ -2343,6 +2569,22 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
   dialog.innerHTML = content;
   modal.appendChild(dialog);
   document.body.appendChild(modal);
+
+  const mergeBtn = dialog.querySelector('#mergeButton');
+  if (mergeBtn) {
+    mergeBtn.addEventListener('click', async () => {
+      modal.remove();
+      await mergeBidirectional();
+    });
+  }
+
+  const pushBtn = dialog.querySelector('#pushLocalToRemote');
+  if (pushBtn) {
+    pushBtn.addEventListener('click', async () => {
+      modal.remove();
+      await syncToSnippet();
+    });
+  }
 
   const applyBtn = dialog.querySelector('#applyRemoteChanges');
   if (applyBtn) {
@@ -5555,12 +5797,6 @@ async function rescanFolder(folderId, folderTitle) {
 
     console.log(`[Folder Rescan] Found ${bookmarks.length} bookmark(s) in folder "${folderTitle}"`);
 
-    // Show confirmation
-    const confirmMessage = `Rescan ${bookmarks.length} bookmark(s) in "${folderTitle}" and its subfolders?\n\nThis will check link status and security for all bookmarks.`;
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
     // Delegate the entire scan to the background script
     console.log(`[Folder Rescan] Delegating scan of ${bookmarks.length} bookmarks to background script.`);
     await chrome.runtime.sendMessage({
@@ -7153,6 +7389,7 @@ async function openChangelogModal() {
       else if (entry.type === 'delete') iconColor = '#ef4444';
       else if (entry.type === 'move') iconColor = '#3b82f6';
       else if (entry.type === 'undo') iconColor = '#8b5cf6';
+      else if (entry.type === 'pre-sync-snapshot') iconColor = '#f59e0b';
       else iconColor = '#f59e0b';
 
       // SVG icons for operation types
@@ -7165,21 +7402,27 @@ async function openChangelogModal() {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M14,18L12.6,16.6L15.2,14H4V12H15.2L12.6,9.4L14,8L19,13L14,18M20,6H10A2,2 0 0,0 8,8V11H10V8H20V20H10V17H8V20A2,2 0 0,0 10,22H20A2,2 0 0,0 22,20V8A2,2 0 0,0 20,6Z"/></svg>`;
       } else if (entry.type === 'undo') {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 19.56,16H22.01C21.43,12.16 17.97,9 13.9,9H12.5V8M12.5,16C10.54,16 8.77,15.28 7.38,14.12L11,10.5H2V19.5L5.6,15.9C7.45,17.5 9.85,18.5 12.5,18.5C17.1,18.5 20.95,15.4 21.9,11.2H19.38C18.77,14.16 15.76,16.34 12.5,16Z"/></svg>`;
+      } else if (entry.type === 'pre-sync-snapshot') {
+        icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/></svg>`;
       } else {
         icon = `<svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style="color: ${iconColor};"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z"/></svg>`;
       }
 
-      // SVG icons for item types
-      let itemIcon;
-      if (entry.itemType === 'folder') {
-        itemIcon = `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="color: var(--md-sys-color-primary);"><path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/></svg>`;
-      } else {
-        itemIcon = `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="color: var(--md-sys-color-secondary);"><path d="M17,3H7A2,2 0 0,0 5,5V21L12,18L19,21V5C19,3.89 18.1,3 17,3Z"/></svg>`;
+      // SVG icons for item types (skip for sync snapshots)
+      let itemIcon = '';
+      if (entry.type !== 'pre-sync-snapshot') {
+        if (entry.itemType === 'folder') {
+          itemIcon = `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="color: var(--md-sys-color-primary);"><path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/></svg>`;
+        } else {
+          itemIcon = `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24" style="color: var(--md-sys-color-secondary);"><path d="M17,3H7A2,2 0 0,0 5,5V21L12,18L19,21V5C19,3.89 18.1,3 17,3Z"/></svg>`;
+        }
       }
 
       let detailsHtml = '';
       if (entry.details) {
-        if (entry.type === 'undo') {
+        if (entry.type === 'pre-sync-snapshot') {
+          detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">⚠️ Replaced all local bookmarks with remote data</div>`;
+        } else if (entry.type === 'undo') {
           if (entry.details.undoType === 'move') {
             detailsHtml = `<div style="font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px;">Restored to: ${entry.details.restoredToFolder}</div>`;
           } else if (entry.details.undoType === 'update') {
@@ -7198,9 +7441,15 @@ async function openChangelogModal() {
 
       const urlHtml = entry.url ? `<div class="changelog-url" data-url="${entry.url}" style="font-size: 11px; color: var(--md-sys-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; text-decoration: underline;" title="Click to copy: ${entry.url}">${entry.url}</div>` : '';
 
-      // Add restore button for undoable operations (delete, move, update) but not for undo entries
+      // Add restore button for undoable operations (delete, move, update, pre-sync-snapshot) but not for undo entries
       let restoreButtonHtml = '';
-      if ((entry.type === 'delete' || entry.type === 'move' || entry.type === 'update') && entry.type !== 'undo') {
+      if (entry.type === 'pre-sync-snapshot') {
+        restoreButtonHtml = `
+          <button class="changelog-restore-btn" data-entry-id="${entry.id}" title="Restore pre-sync bookmarks" style="margin-left: auto; padding: 6px 12px; border: 1px solid ${iconColor}; border-radius: 6px; background: ${iconColor}; color: #000; cursor: pointer; font-size: 12px; font-weight: 600;">
+            Restore Pre-Sync Bookmarks
+          </button>
+        `;
+      } else if ((entry.type === 'delete' || entry.type === 'move' || entry.type === 'update') && entry.type !== 'undo') {
         const restoreTitle = entry.type === 'delete' ? 'Restore this item' :
                             entry.type === 'move' ? 'Move back to original location' :
                             'Revert changes';
@@ -7288,6 +7537,103 @@ async function restoreChangelogEntry(entryId) {
     if (!entry) {
       alert('Changelog entry not found.');
       return;
+    }
+
+    // Handle pre-sync-snapshot restoration
+    if (entry.type === 'pre-sync-snapshot') {
+      if (!entry.details || !entry.details.snapshot) {
+        alert('Snapshot data not found. Cannot restore pre-sync bookmarks.');
+        return;
+      }
+
+      const confirmed = confirm(
+        `⚠️ RESTORE PRE-SYNC BOOKMARKS\n\n` +
+        `This will replace ALL your current bookmarks with the bookmarks you had BEFORE the sync operation.\n\n` +
+        `Operation: ${entry.details.operation || 'Sync'}\n` +
+        `Date: ${new Date(entry.timestamp).toLocaleString()}\n\n` +
+        `Are you sure you want to proceed?`
+      );
+
+      if (!confirmed) return;
+
+      try {
+        showToast('Restoring pre-sync bookmarks...', 'info');
+
+        const snapshot = entry.details.snapshot;
+
+        // Delete all current bookmarks
+        const currentTree = await chrome.bookmarks.getTree();
+        if (currentTree[0] && currentTree[0].children) {
+          for (const root of currentTree[0].children) {
+            if (root.children) {
+              for (const child of root.children) {
+                await chrome.bookmarks.removeTree(child.id);
+              }
+            }
+          }
+        }
+
+        // Restore from snapshot
+        const createNodes = async (nodes, parentId) => {
+          for (const node of nodes) {
+            if (node.url) {
+              await chrome.bookmarks.create({
+                parentId: parentId,
+                title: node.title,
+                url: node.url
+              });
+            } else if (node.children) {
+              const newFolder = await chrome.bookmarks.create({
+                parentId: parentId,
+                title: node.title
+              });
+              await createNodes(node.children, newFolder.id);
+            }
+          }
+        };
+
+        // Recreate bookmark structure from snapshot
+        if (snapshot.roots) {
+          if (snapshot.roots.bookmark_bar && snapshot.roots.bookmark_bar.children) {
+            await createNodes(snapshot.roots.bookmark_bar.children, '1');
+          }
+          if (snapshot.roots.other && snapshot.roots.other.children) {
+            await createNodes(snapshot.roots.other.children, '2');
+          }
+          if (snapshot.roots.menu && snapshot.roots.menu.children && snapshot.roots.menu.children.length > 0) {
+            const menuFolder = await chrome.bookmarks.create({
+              parentId: '2',
+              title: 'Bookmarks Menu'
+            });
+            await createNodes(snapshot.roots.menu.children, menuFolder.id);
+          }
+          if (snapshot.roots.mobile && snapshot.roots.mobile.children && snapshot.roots.mobile.children.length > 0) {
+            const mobileFolder = await chrome.bookmarks.create({
+              parentId: '2',
+              title: 'Mobile Bookmarks'
+            });
+            await createNodes(snapshot.roots.mobile.children, mobileFolder.id);
+          }
+        }
+
+        // Clear changelog since we've restored to a previous state
+        await clearChangelog();
+
+        showToast('✓ Pre-sync bookmarks restored successfully!', 'success');
+
+        // Refresh UI
+        await loadBookmarks();
+        await renderBookmarks();
+
+        // Close changelog modal
+        closeChangelogModal();
+
+        return;
+      } catch (error) {
+        console.error('[Restore Snapshot] Error:', error);
+        showToast(`Failed to restore snapshot: ${error.message}`, 'error');
+        return;
+      }
     }
 
     // Only allow restoring certain operation types
