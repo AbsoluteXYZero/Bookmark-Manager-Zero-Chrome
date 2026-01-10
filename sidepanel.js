@@ -3008,6 +3008,85 @@ async function syncBackgroundScanStatus() {
   }
 }
 
+/**
+ * Find a bookmark in the tree by ID (helper function)
+ */
+function findBookmarkInTree(nodes, bookmarkId) {
+  for (const node of nodes) {
+    if (node.id === bookmarkId) {
+      return node;
+    }
+    if (node.children) {
+      const found = findBookmarkInTree(node.children, bookmarkId);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/**
+ * Update a specific bookmark element's status indicators without re-rendering the entire list.
+ * This is much faster than renderBookmarks() and doesn't block the UI.
+ */
+function updateBookmarkElementStatus(bookmarkId, updates) {
+  const bookmarkElement = document.querySelector(`[data-id="${bookmarkId}"]`);
+  if (!bookmarkElement || !bookmarkElement.classList.contains('bookmark-item')) {
+    return; // Bookmark not currently visible or is a folder
+  }
+
+  // Get the bookmark data from tree to access its URL
+  const bookmark = findBookmarkInTree(bookmarkTree, bookmarkId);
+  if (!bookmark) return;
+
+  // Update status indicators container (for list view)
+  const statusIndicatorsContainer = bookmarkElement.querySelector('.status-indicators');
+  if (statusIndicatorsContainer && (displayOptions.safetyStatus || displayOptions.liveStatus)) {
+    let statusHtml = '';
+
+    if (displayOptions.safetyStatus && updates.safetyStatus) {
+      statusHtml += getShieldHtml(updates.safetyStatus, bookmark.url, updates.safetySources || []);
+    }
+
+    if (displayOptions.liveStatus && updates.linkStatus) {
+      statusHtml += getStatusDotHtml(updates.linkStatus, bookmark.url);
+    }
+
+    statusIndicatorsContainer.innerHTML = statusHtml;
+  }
+
+  // Update top row indicators (for grid view)
+  const topRow = bookmarkElement.querySelector('.bookmark-top-row');
+  if (topRow) {
+    // Update shield in top row
+    if (displayOptions.safetyStatus && updates.safetyStatus) {
+      const shieldHtml = getShieldHtml(updates.safetyStatus, bookmark.url, updates.safetySources || []);
+      const shieldContainer = topRow.querySelector('.safety-shield');
+      if (shieldContainer) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = shieldHtml;
+        const newShield = tempDiv.firstChild;
+        if (newShield) {
+          shieldContainer.replaceWith(newShield);
+        }
+      }
+    }
+
+    // Update link status in top row
+    if (displayOptions.liveStatus && updates.linkStatus) {
+      const linkStatusHtml = getStatusDotHtml(updates.linkStatus, bookmark.url);
+      const linkStatusContainer = topRow.querySelector('.link-status');
+      if (linkStatusContainer) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = linkStatusHtml;
+        const newLinkStatus = tempDiv.firstChild;
+        if (newLinkStatus) {
+          linkStatusContainer.replaceWith(newLinkStatus);
+        }
+      }
+    }
+  }
+}
+
 //// Setup listener for blocklist download and background scan progress messages from background script
 function setupBlocklistProgressListener() {
   chrome.runtime.onMessage.addListener((message) => {
@@ -3053,10 +3132,12 @@ function setupBlocklistProgressListener() {
           updates.safetySources = result.safetySources || [];
         }
         updateBookmarkInTree(result.id, updates);
+
+        // Update only the specific bookmark element (fast, non-blocking)
+        updateBookmarkElementStatus(result.id, updates);
       });
-      
-      // Re-render after processing the batch
-      renderBookmarks();
+
+      // No longer need to re-render the entire list!
 
     } else if (message.type === 'scanComplete') {
       console.log(`[Background Scan] Complete - ${message.scanned}/${message.total} bookmarks scanned`);
