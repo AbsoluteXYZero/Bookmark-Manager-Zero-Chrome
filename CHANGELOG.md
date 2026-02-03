@@ -4,9 +4,9 @@
 
 **New Features:**
 - **Added Dandelion Sprout Anti-Malware List** - New blocklist source for enhanced malware detection
-  - Curated list of ~5K malware, scam, and phishing domains
-  - Actively maintained with regular updates
-  - Complements existing blocklists with hand-curated security coverage
+- Curated list of ~5K malware, scam, and phishing domains
+- Actively maintained with regular updates
+- Complements existing blocklists with hand-curated security coverage
 
 ---
 
@@ -14,9 +14,9 @@
 
 **New Features:**
 - **Added FMHY Filterlist** - New blocklist source from the FMHY community
-  - Covers fake Windows activators (KMS-Pico variants), malware distributors, and unsafe download sites
-  - ~282 curated domains from actively maintained community list
-  - Complements existing blocklists with hand-curated unsafe site coverage
+- Covers fake Windows activators (KMS-Pico variants), malware distributors, and unsafe download sites
+- ~282 curated domains from actively maintained community list
+- Complements existing blocklists with hand-curated unsafe site coverage
 
 ---
 
@@ -24,16 +24,16 @@
 
 **Bug Fixes:**
 - **Fixed Status Bar Initialization** - Status bar now properly updates from "downloading blocklists (8/8)" to "Ready" on first load
-  - Added blocklist complete event dispatch when using cached blocklists
-  - Ensures UI updates correctly whether downloading fresh or loading from cache
-  - Applies to initial extension load and subsequent reopens
+- Added blocklist complete event dispatch when using cached blocklists
+- Ensures UI updates correctly whether downloading fresh or loading from cache
+- Applies to initial extension load and subsequent reopens
 - **Eliminated Bookmark Click Delays During Scans** - Bookmarks now open instantly even during active background scans
-  - Replaced expensive full DOM re-renders with surgical updates of specific bookmark elements
-  - Performance improvement: 100-500ms → 1-5ms per update (100x faster)
-  - Added `findBookmarkInTree()` helper function for efficient bookmark lookup
-  - Added `updateBookmarkElementStatus()` for targeted status indicator updates
-  - Updates both list view and grid view layouts
-  - Scan speed improvement: 30-50% faster overall due to eliminated UI blocking
+- Replaced expensive full DOM re-renders with surgical updates of specific bookmark elements
+- Performance improvement: 100-500ms → 1-5ms per update (100x faster)
+- Added `findBookmarkInTree()` helper function for efficient bookmark lookup
+- Added `updateBookmarkElementStatus()` for targeted status indicator updates
+- Updates both list view and grid view layouts
+- Scan speed improvement: 30-50% faster overall due to eliminated UI blocking
 
 **Technical Details:**
 - Blocklist service now dispatches `blocklistComplete` message when loading from same-day cache
@@ -47,15 +47,15 @@
 
 **New Features:**
 - **Enhanced GitLab Login Button** - GitLab tanuki icon now displays "LOGIN" text overlay for clarity
-  - Bold black text on white tanuki makes it immediately obvious this is a login button
-  - Automatically switches to logout icon when authenticated
-  - Improves user experience by making button purpose crystal clear
+- Bold black text on white tanuki makes it immediately obvious this is a login button
+- Automatically switches to logout icon when authenticated
+- Improves user experience by making button purpose crystal clear
 
 **Improvements:**
 - **Conditional Manual Sync Button** - Manual sync button now only appears when logged in
-  - Hides when not authenticated to keep UI clean
-  - Automatically shows/hides based on GitLab authentication state
-  - Reduces UI clutter for users not using GitLab sync
+- Hides when not authenticated to keep UI clean
+- Automatically shows/hides based on GitLab authentication state
+- Reduces UI clutter for users not using GitLab sync
 
 ---
 
@@ -63,12 +63,12 @@
 
 **New Features:**
 - **Pre-Sync Snapshot Protection** - Automatic safety net for sync operations
-  - Creates complete bookmark snapshot before destructive sync operations (Pull Remote to Local, Bidirectional Merge)
-  - Stores full bookmark tree state before replacing with remote data
-  - Allows one-click restoration to pre-sync state if sync was done mistakenly
-  - Accessible via changelog with prominent "Restore Pre-Sync Bookmarks" button
-  - Clears old changelog entries (invalid IDs after sync) automatically
-  - Prevents data loss from accidental sync operations
+- Creates complete bookmark snapshot before destructive sync operations (Pull Remote to Local, Bidirectional Merge)
+- Stores full bookmark tree state before replacing with remote data
+- Allows one-click restoration to pre-sync state if sync was done mistakenly
+- Accessible via changelog with prominent "Restore Pre-Sync Bookmarks" button
+- Clears old changelog entries (invalid IDs after sync) automatically
+- Prevents data loss from accidental sync operations
 
 **How It Works:**
 - When you perform "Pull Remote to Local" or "Bidirectional Merge", a snapshot is automatically created
@@ -89,10 +89,10 @@
 
 **Improvements:**
 - **Pretty-Printed JSON Snippets** - GitLab snippets now use formatted JSON for better readability
-  - Changed from single-line compact JSON to pretty-printed format with 2-space indentation at sidepanel.js:820
-  - Matches Firefox version formatting for consistency
-  - Makes snippet content much easier to read and debug when viewing in GitLab
-  - All future snippet creations and updates will use formatted JSON
+- Changed from single-line compact JSON to pretty-printed format with 2-space indentation at sidepanel.js:820
+- Matches Firefox version formatting for consistency
+- Makes snippet content much easier to read and debug when viewing in GitLab
+- All future snippet creations and updates will use formatted JSON
 
 ---
 
@@ -100,10 +100,10 @@
 
 **Bug Fixes:**
 - **Fixed GitLab Snippet Merge Error** - Resolved "No Snippet ID provided" error when merging local bookmarks into snippet
-  - Fixed parameter order mismatch in `updateBookmarksInSnippet()` function call at sidepanel.js:1499
-  - Fixed global `snippetId` variable being set after merge operation instead of before at sidepanel.js:1680-1681
-  - Merge operation now properly sets snippet ID before attempting to update
-  - Ensures smooth GitLab sync setup when merging local bookmarks with existing snippets
+- Fixed parameter order mismatch in `updateBookmarksInSnippet()` function call at sidepanel.js:1499
+- Fixed global `snippetId` variable being set after merge operation instead of before at sidepanel.js:1680-1681
+- Merge operation now properly sets snippet ID before attempting to update
+- Ensures smooth GitLab sync setup when merging local bookmarks with existing snippets
 
 ---
 
@@ -111,10 +111,10 @@
 
 **Improvements:**
 - **Universal Real-time Progress** - ALL scan types now update progress after every individual bookmark
-  - Fixed folder expansion scanning (autoCheckBookmarkStatuses) to update per bookmark instead of per batch
-  - Fixed rescan all bookmarks to update per bookmark
-  - Fixed background scans to update per bookmark
-  - Applies to all scan operations for consistent, responsive feedback
+- Fixed folder expansion scanning (autoCheckBookmarkStatuses) to update per bookmark instead of per batch
+- Fixed rescan all bookmarks to update per bookmark
+- Fixed background scans to update per bookmark
+- Applies to all scan operations for consistent, responsive feedback
 
 ---
 
@@ -122,17 +122,17 @@
 
 **New Features:**
 - **Session State Persistence** - Bookmark Manager Zero now remembers where you left off when you reopen it
-  - Restores scroll position to exactly where you were
-  - Remembers which folders were expanded/collapsed
-  - Preserves your search query and active filters
-  - Session clears when browser closes for privacy
+- Restores scroll position to exactly where you were
+- Remembers which folders were expanded/collapsed
+- Preserves your search query and active filters
+- Session clears when browser closes for privacy
 - **Real-time Scan Progress** - Progress counter now updates after every bookmark scanned instead of every 10
-  - More responsive and accurate progress feedback during scans
-  - Consistent behavior across all scan operations
+- More responsive and accurate progress feedback during scans
+- Consistent behavior across all scan operations
 
 **Bug Fixes:**
 - **Fixed Firefox Stop Scan Button** - Stop scanning button now works correctly in Firefox version
-  - Corrected message action name mismatch between sidebar and background script
+- Corrected message action name mismatch between sidebar and background script
 
 ---
 
@@ -165,9 +165,9 @@
 
 **Bug Fixes:**
 - **Fixed whitelist persistence** - Whitelisted bookmarks now maintain their status after side panel reload
-  - Added whitelist check during cache restoration
-  - Whitelist status takes priority over cached statuses
-  - Fixes issue where whitelisted bookmarks showed gray shields after reopening side panel
+- Added whitelist check during cache restoration
+- Whitelist status takes priority over cached statuses
+- Fixes issue where whitelisted bookmarks showed gray shields after reopening side panel
 
 ---
 
@@ -178,17 +178,17 @@
 
 **Bug Fixes:**
 - **Fixed cache race condition** - Resolved issue where parallel bookmark scans would overwrite each other's cache entries
-  - Added mutex locks to prevent concurrent cache writes
-  - Fixes gray indicators appearing after folder rescan and side panel reload
-  - Ensures privileged URLs (chrome://, chrome-extension://) persist in cache correctly
+- Added mutex locks to prevent concurrent cache writes
+- Fixes gray indicators appearing after folder rescan and side panel reload
+- Ensures privileged URLs (chrome://, chrome-extension://) persist in cache correctly
 - **Fixed folder rescan progress** - Folder rescans now show real-time UI updates and status bar progress
-  - Added `renderBookmarks()` call after each batch during folder rescan
-  - Reduced batch delay from 1000ms to 300ms for 3x faster scanning
-  - Status bar shows "Scanning folder: X/Y" during scan
+- Added `renderBookmarks()` call after each batch during folder rescan
+- Reduced batch delay from 1000ms to 300ms for 3x faster scanning
+- Status bar shows "Scanning folder: X/Y" during scan
 - **Fixed blocklist loading timing** - Scans now proactively load blocklist database before starting
-  - Added `ensureBlocklistReady` message handler to trigger database update before scanning
-  - Prevents "unknown" safety status results when database loads mid-scan
-  - Applies to both folder rescans and background scans
+- Added `ensureBlocklistReady` message handler to trigger database update before scanning
+- Prevents "unknown" safety status results when database loads mid-scan
+- Applies to both folder rescans and background scans
 
 ---
 
@@ -196,23 +196,23 @@
 
 **New Features:**
 -  **First-Time Setup Card** - Welcoming onboarding experience for new users
-  - Appears only once on first installation (never on updates)
-  - Explains auto-scan behavior and folder scanning
-  - One-click option to scan all bookmarks immediately
-  - Clear disclaimer about false positives/negatives
-  - Persistent flag independent of cache clearing
+- Appears only once on first installation (never on updates)
+- Explains auto-scan behavior and folder scanning
+- One-click option to scan all bookmarks immediately
+- Clear disclaimer about false positives/negatives
+- Persistent flag independent of cache clearing
 -  **QR Code Generator** - Generate QR codes for any bookmark
-  - Right-click bookmark → "Generate QR Code"
-  - Toolbar button for quick QR code generation of current page URL
-  - 100% local generation (privacy-focused, no external requests)
-  - Editable URL field with live QR code regeneration
-  - Works completely offline
-  - Perfect for quickly accessing bookmarks on mobile devices
+- Right-click bookmark → "Generate QR Code"
+- Toolbar button for quick QR code generation of current page URL
+- 100% local generation (privacy-focused, no external requests)
+- Editable URL field with live QR code regeneration
+- Works completely offline
+- Perfect for quickly accessing bookmarks on mobile devices
 - **Background Scanning** - Bookmark scanning continues even when side panel is closed
-  - Scanning runs in background service worker for persistent operation
-  - Progress automatically syncs when side panel reopens
-  - Scan results restore from cache upon reopening
-  - Processes bookmarks in batches (10 items, 300ms delay)
+- Scanning runs in background service worker for persistent operation
+- Progress automatically syncs when side panel reopens
+- Scan results restore from cache upon reopening
+- Processes bookmarks in batches (10 items, 300ms delay)
 
 **User Experience:**
 - Setup card positioned as inline banner between header and bookmarks
@@ -258,15 +258,15 @@
 
 **New Features:**
 - **Bookmark Changelog** - Comprehensive history tracking for all bookmark and folder operations
-  - Tracks creates, updates, moves, and deletes for both bookmarks and folders
-  - Accessible via "View Bookmark Changelog" button in settings menu (just under Export Bookmarks)
-  - Persistent storage survives browser restarts and side panel closes
-  - Maximum 1000 entries to prevent unlimited growth
+- Tracks creates, updates, moves, and deletes for both bookmarks and folders
+- Accessible via "View Bookmark Changelog" button in settings menu (just under Export Bookmarks)
+- Persistent storage survives browser restarts and side panel closes
+- Maximum 1000 entries to prevent unlimited growth
 - **Modern SVG Icons** - Color-coded operation icons matching app aesthetic
-  - Green: Create operations
-  - Red: Delete operations
-  - Blue: Move operations
-  - Orange: Update/rename operations
+- Green: Create operations
+- Red: Delete operations
+- Blue: Move operations
+- Orange: Update/rename operations
 - **Clickable URLs** - Click any bookmark URL in changelog to copy to clipboard with visual feedback
 - **Human-Readable Timestamps** - "5 minutes ago", "2 hours ago", etc.
 - **Folder Path Tracking** - Shows full folder hierarchy for moved items
@@ -368,10 +368,10 @@
 
 **Security Enhancements:**
 - **5 Additional Blocklist Sources** - Expanded from 3 to 8 total sources for comprehensive malware protection
-  - HaGeZi TIF (608K+ threat intel domains)
-  - Phishing-Filter (21K+ phishing URLs from OpenPhish & PhishTank)
-  - OISD Big (215K+ multi-source blocklist)
-  - BlockList Project: Malware (435K+ domains), Phishing (190K+ domains), Scam (1.3K+ domains)
+- HaGeZi TIF (608K+ threat intel domains)
+- Phishing-Filter (21K+ phishing URLs from OpenPhish & PhishTank)
+- OISD Big (215K+ multi-source blocklist)
+- BlockList Project: Malware (435K+ domains), Phishing (190K+ domains), Scam (1.3K+ domains)
 - **Yandex Safe Browsing API** - Optional geographic threat diversity for Russian/Eastern European threats (100K requests/day free tier)
 - **Total Coverage: ~1.35M unique malicious domains** (deduplicated from 1.6M entries)
 - **Source Attribution** - Malware detection tooltips now show which blocklist(s) flagged the URL
@@ -491,8 +491,8 @@
 **New Features:**
 - **Chrome Support** - Ported from Firefox to Chrome using Side Panel API
 - **Multiple Filter Selection** - Select multiple filters simultaneously for advanced filtering
-  - OR logic within categories (e.g., Live + Dead shows both)
-  - AND logic between categories (e.g., Live + Safe shows only live AND safe)
+- OR logic within categories (e.g., Live + Dead shows both)
+- AND logic between categories (e.g., Live + Safe shows only live AND safe)
 - **Buy Me a Coffee** - Added support link in settings menu
 
 **Changes from Firefox version:**
