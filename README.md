@@ -59,7 +59,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 
 <div align="center">
 
-### 📸 Gallery (Click to view full size)
+### Gallery (Click to view full size)
 
 <table>
   <tr>
