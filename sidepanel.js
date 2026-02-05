@@ -1641,6 +1641,16 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
       return children.find(child => child.type === 'folder' && child.title === title);
     };
 
+    // Helper function to recursively regenerate IDs for all nodes in a subtree
+    const regenerateIds = (node) => {
+      node.id = `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      node.dateAdded = Date.now();
+      if (node.children) {
+        node.children.forEach(regenerateIds);
+      }
+      return node;
+    };
+
     // Helper function to merge source folder into target folder
     const mergeFolder = (sourceFolder, targetParentChildren) => {
       const existingFolder = findFolderByTitle(targetParentChildren, sourceFolder.title);
@@ -1673,13 +1683,9 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
           });
         }
       } else {
-        // Folder doesn't exist, add entire folder structure
+        // Folder doesn't exist, add entire folder structure with regenerated IDs
         console.log(`[mergeBookmarksIntoTree] Adding new folder: ${sourceFolder.title}`);
-        const newFolder = {
-          ...sourceFolder,
-          id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
-          dateAdded: Date.now()
-        };
+        const newFolder = regenerateIds(JSON.parse(JSON.stringify(sourceFolder)));
         targetParentChildren.push(newFolder);
       }
     };
