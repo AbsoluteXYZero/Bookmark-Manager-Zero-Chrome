@@ -1588,27 +1588,20 @@ async function showMergeConfirmationDialog(snippetId, type) {
 // Merge local bookmarks into existing snippet
 async function mergeLocalBookmarksIntoSnippet(snippetId) {
   try {
-    console.log('[mergeLocalBookmarksIntoSnippet] Starting merge process for snippet:', snippetId);
-
     // Get current snippet data
     const snippetData = await readBookmarksFromSnippet(snippetId);
-    console.log('[mergeLocalBookmarksIntoSnippet] Retrieved snippet data');
 
     // Get local Chrome bookmarks
     const localTree = await chrome.bookmarks.getTree();
-    console.log('[mergeLocalBookmarksIntoSnippet] Retrieved local Chrome bookmarks');
 
     // Convert Chrome bookmarks to snippet format
     const localBookmarksInSnippetFormat = chromeBookmarksToSnippetFormat(localTree[0]);
 
     // Merge local bookmarks into snippet data
     const mergedTree = mergeBookmarksIntoTree(localBookmarksInSnippetFormat, snippetData);
-    console.log('[mergeLocalBookmarksIntoSnippet] Merged tree created');
 
     // Update snippet with merged data
-    console.log('[mergeLocalBookmarksIntoSnippet] Updating snippet with merged data...');
     await updateBookmarksInSnippet(mergedTree, snippetData.version + 1);
-    console.log('[mergeLocalBookmarksIntoSnippet] Snippet updated successfully');
 
   } catch (error) {
     console.error('[mergeLocalBookmarksIntoSnippet] Error:', error);
@@ -1620,8 +1613,6 @@ async function mergeLocalBookmarksIntoSnippet(snippetId) {
 // Preserves folder structure and merges into existing folders with same names
 function mergeBookmarksIntoTree(sourceTree, targetTree) {
   try {
-    console.log('[mergeBookmarksIntoTree] Merging bookmarks with folder structure preservation...');
-
     // Create a deep copy of the target tree
     const mergedTree = JSON.parse(JSON.stringify(targetTree));
 
@@ -1657,7 +1648,6 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
 
       if (existingFolder) {
         // Folder exists, merge contents
-        console.log(`[mergeBookmarksIntoTree] Merging into existing folder: ${sourceFolder.title}`);
         if (sourceFolder.children) {
           // Recursively merge each child
           sourceFolder.children.forEach(child => {
@@ -1675,16 +1665,12 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
                   id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
                   dateAdded: Date.now()
                 });
-                console.log(`[mergeBookmarksIntoTree] Added bookmark: ${child.title}`);
-              } else {
-                console.log(`[mergeBookmarksIntoTree] Skipped duplicate bookmark: ${child.title}`);
               }
             }
           });
         }
       } else {
         // Folder doesn't exist, add entire folder structure with regenerated IDs
-        console.log(`[mergeBookmarksIntoTree] Adding new folder: ${sourceFolder.title}`);
         const newFolder = regenerateIds(JSON.parse(JSON.stringify(sourceFolder)));
         targetParentChildren.push(newFolder);
       }
@@ -1713,9 +1699,6 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
                   id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
                   dateAdded: Date.now()
                 });
-                console.log(`[mergeBookmarksIntoTree] Added individual bookmark to ${rootKey}: ${item.title}`);
-              } else {
-                console.log(`[mergeBookmarksIntoTree] Skipped duplicate bookmark in ${rootKey}: ${item.title}`);
               }
             }
           });
@@ -1723,7 +1706,6 @@ function mergeBookmarksIntoTree(sourceTree, targetTree) {
       });
     }
 
-    console.log('[mergeBookmarksIntoTree] Merge complete with folder structure preservation');
     return mergedTree;
   } catch (error) {
     console.error('[mergeBookmarksIntoTree] Error:', error);
@@ -1948,7 +1930,6 @@ async function startSnippetAutoSync() {
   // Perform initial sync immediately
   if (snippetId && snippetToken && navigator.onLine) {
     try {
-      console.log('[Snippet AutoSync] Running initial sync...');
       await syncFromSnippet();
     } catch (error) {
       console.error('[Snippet AutoSync] Initial sync failed:', error);
@@ -1962,14 +1943,11 @@ async function startSnippetAutoSync() {
     }
 
     try {
-      console.log('[Snippet AutoSync] Running scheduled sync...');
       await syncFromSnippet();
     } catch (error) {
       console.error('[Snippet AutoSync] Scheduled sync failed:', error);
     }
   }, syncInterval);
-
-  console.log('[Snippet AutoSync] Auto-sync enabled (immediate + 5-minute interval)');
 }
 
 // Stop auto-syncing Snippet
@@ -1977,7 +1955,6 @@ function stopSnippetAutoSync() {
   if (snippetSyncInterval) {
     clearInterval(snippetSyncInterval);
     snippetSyncInterval = null;
-    console.log('[Snippet AutoSync] Auto-sync disabled');
   }
 }
 
@@ -1999,20 +1976,17 @@ function markSnippetChanges() {
 
     if (timeSinceLastSync < snippetMinSyncInterval) {
       const delayMs = snippetMinSyncInterval - timeSinceLastSync;
-      console.log('[SnippetPushSync] Rate limit: waiting', delayMs, 'ms before next sync');
       snippetPushDebounceTimer = setTimeout(markSnippetChanges, delayMs);
       return;
     }
 
     try {
-      console.log('[SnippetPushSync] Syncing local changes to Snippet...');
       await syncToSnippet();
     } catch (error) {
       console.error('[SnippetPushSync] Failed to sync:', error);
       // Retry after 5 seconds
       setTimeout(() => {
         if (snippetId && snippetToken && navigator.onLine) {
-          console.log('[SnippetPushSync] Retrying sync after 5 seconds...');
           syncToSnippet().catch(err => {
             console.error('[SnippetPushSync] Retry failed:', err);
           });
@@ -2962,7 +2936,6 @@ async function loadFolderScanTimestamps() {
     const result = await chrome.storage.local.get('folderScanTimestamps');
     if (result.folderScanTimestamps) {
       folderScanTimestamps = result.folderScanTimestamps;
-      console.log(`[Folder Scan Cache] Loaded timestamps for ${Object.keys(folderScanTimestamps).length} folders`);
     }
   } catch (error) {
     console.error('[Folder Scan Cache] Error loading timestamps:', error);
@@ -2974,7 +2947,6 @@ async function saveFolderScanTimestamp(folderId) {
   try {
     folderScanTimestamps[folderId] = Date.now();
     await chrome.storage.local.set({ folderScanTimestamps });
-    console.log(`[Folder Scan Cache] Saved timestamp for folder ${folderId}`);
   } catch (error) {
     console.error('[Folder Scan Cache] Error saving timestamp:', error);
   }
@@ -3066,7 +3038,7 @@ function updateBookmarkElementStatus(bookmarkId, updates) {
     // Update shield in top row
     if (displayOptions.safetyStatus && updates.safetyStatus) {
       const shieldHtml = getShieldHtml(updates.safetyStatus, bookmark.url, updates.safetySources || []);
-      const shieldContainer = topRow.querySelector('.safety-shield');
+      const shieldContainer = topRow.querySelector('.shield-indicator');
       if (shieldContainer) {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = shieldHtml;
@@ -3080,7 +3052,7 @@ function updateBookmarkElementStatus(bookmarkId, updates) {
     // Update link status in top row
     if (displayOptions.liveStatus && updates.linkStatus) {
       const linkStatusHtml = getStatusDotHtml(updates.linkStatus, bookmark.url);
-      const linkStatusContainer = topRow.querySelector('.link-status');
+      const linkStatusContainer = topRow.querySelector('.status-icon');
       if (linkStatusContainer) {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = linkStatusHtml;
