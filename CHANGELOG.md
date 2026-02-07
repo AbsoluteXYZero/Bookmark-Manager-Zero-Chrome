@@ -8,6 +8,9 @@
 - Actively maintained with regular updates
 - Complements existing blocklists with hand-curated security coverage
 
+**Bug Fixes:**
+- **Blocklist Download Status Bar**: Fixed status bar getting stuck on "Downloading blocklists..." if download fails. Now always sends completion message via `finally` block.
+
 ---
 
 ### v3.9 - Added FMHY Filterlist

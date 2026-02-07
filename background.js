@@ -1023,6 +1023,8 @@ const updateBlocklistDatabase = async () => {
   }
 
   blocklistLoading = true;
+  let success = false;
+  let totalCount = 0;
 
   try {
     console.log(`[Blocklist] Starting update from ${BLOCKLIST_SOURCES.length} sources...`);
@@ -1058,7 +1060,7 @@ const updateBlocklistDatabase = async () => {
     }
 
     // Combine all domains into the Set and track sources
-    let totalCount = 0;
+    totalCount = 0;
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const sourceName = BLOCKLIST_SOURCES[i].name;
@@ -1104,20 +1106,23 @@ const updateBlocklistDatabase = async () => {
       blocklistLastUpdate: blocklistLastUpdate
     });
 
-    // Notify UI that blocklist download is complete
-    chrome.runtime.sendMessage({
-      type: 'blocklistComplete',
-      domains: maliciousUrlsSet.size,
-      totalEntries: totalCount,
-      sources: BLOCKLIST_SOURCES.length
-    }).catch(() => {});
-
-    blocklistLoading = false;
+    success = true;
     return true;
   } catch (error) {
     console.error(`[Blocklist] Error updating database:`, error);
-    blocklistLoading = false;
     return false;
+  } finally {
+    // ALWAYS send completion message to prevent UI from getting stuck
+    // Even on partial failures, the UI should reset to "Ready"
+    chrome.runtime.sendMessage({
+      type: 'blocklistComplete',
+      domains: maliciousUrlsSet.size,
+      totalEntries: success ? totalCount : 0,
+      sources: BLOCKLIST_SOURCES.length,
+      success: success
+    }).catch(() => {});
+
+    blocklistLoading = false;
   }
 };
 
