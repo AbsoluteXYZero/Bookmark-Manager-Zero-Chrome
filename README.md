@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-4.2-blue" alt="Version">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   </a>
