@@ -4395,25 +4395,13 @@ function createDropZone(parentId, targetIndex) {
   return dropZone;
 }
 
-// Recursively render bookmark nodes with drop zones between them
+// Recursively render bookmark nodes
 function renderNodes(nodes, container, parentId = '0') {
-  const isRootLevel = (parentId === '0');
-
-  nodes.forEach((node, index) => {
-    // Add the actual item
+  nodes.forEach((node) => {
     if (node.children) {
       container.appendChild(createFolderElement(node));
     } else if (node.url) {
       container.appendChild(createBookmarkElement(node));
-    }
-
-    // Add a drop zone after this item
-    // For root level: Don't add after the last item (root-drop-zone handles that)
-    // For folders: Always add drop zone after each item for consistent spacing
-    const isLastItem = (index === nodes.length - 1);
-    if (!isLastItem || !isRootLevel) {
-      const dropZone = createDropZone(parentId, index + 1);
-      container.appendChild(dropZone);
     }
   });
 }
@@ -4685,12 +4673,19 @@ function createFolderElement(folder) {
     e.preventDefault();
     e.stopPropagation(); // Don't let this bubble to parent folders
     e.dataTransfer.dropEffect = 'move';
-    handleDragOver(e, folderDiv);
+    removeAllDropIndicators();
+    const rect = header.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (y < rect.height * 0.5) {
+      folderDiv.classList.add('drop-before');
+    } else {
+      folderDiv.classList.add('drop-into');
+    }
   });
 
   header.addEventListener('dragleave', (e) => {
     if (!header.contains(e.relatedTarget)) {
-      removeDropIndicator(folderDiv);
+      folderDiv.classList.remove('drop-before', 'drop-into');
     }
   });
 
@@ -4700,13 +4695,11 @@ function createFolderElement(folder) {
 
     // Read drop state BEFORE clearing indicators
     const dropBefore = folderDiv.classList.contains('drop-before');
-    const dropAfter = folderDiv.classList.contains('drop-after');
-    const dropInto = folderDiv.classList.contains('drop-into');
 
     removeAllDropIndicators();
 
     const draggedId = e.dataTransfer.getData('text/plain');
-    await handleDrop(draggedId, folder.id, folderDiv, { dropBefore, dropAfter, dropInto });
+    await handleDrop(draggedId, folder.id, folderDiv, { dropBefore, dropAfter: false, dropInto: !dropBefore });
   });
 
   // Render children if expanded
@@ -4860,12 +4853,19 @@ function createBookmarkElement(bookmark) {
     e.preventDefault();
     e.stopPropagation(); // Don't let this bubble to parent folder header
     e.dataTransfer.dropEffect = 'move';
-    handleDragOver(e, bookmarkDiv);
+    removeAllDropIndicators();
+    const rect = bookmarkDiv.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    if (y < rect.height * 0.5) {
+      bookmarkDiv.classList.add('drop-before');
+    } else {
+      bookmarkDiv.classList.add('drop-after');
+    }
   });
 
   bookmarkDiv.addEventListener('dragleave', (e) => {
     if (!bookmarkDiv.contains(e.relatedTarget)) {
-      removeDropIndicator(bookmarkDiv);
+      bookmarkDiv.classList.remove('drop-before', 'drop-after');
     }
   });
 
@@ -4875,12 +4875,11 @@ function createBookmarkElement(bookmark) {
 
     // Read drop state BEFORE clearing indicators
     const dropBefore = bookmarkDiv.classList.contains('drop-before');
-    const dropAfter = bookmarkDiv.classList.contains('drop-after');
 
     removeAllDropIndicators();
 
     const draggedId = e.dataTransfer.getData('text/plain');
-    await handleDrop(draggedId, bookmark.id, bookmarkDiv, { dropBefore, dropAfter, dropInto: false });
+    await handleDrop(draggedId, bookmark.id, bookmarkDiv, { dropBefore, dropAfter: !dropBefore, dropInto: false });
   });
 
   // Preview hover handler - load image on first hover (only if preview is enabled)
@@ -5250,36 +5249,8 @@ function stopDragScroll() {
   }
 }
 
-function handleDragOver(e, targetElement) {
-  const rect = targetElement.getBoundingClientRect();
-  const height = rect.height;
-  const y = e.clientY - rect.top;
-
-  // For folders, support dropping INTO them (middle third) or before/after (top/bottom thirds)
-  const isFolderItem = targetElement.classList.contains('folder-item');
-
-  removeAllDropIndicators();
-
-  if (isFolderItem) {
-    // Divide folder into three zones: top 20%, middle 60%, bottom 20%
-    // Smaller before/after zones make drop-into more prominent
-    if (y < height * 0.2) {
-      targetElement.classList.add('drop-before');
-    } else if (y > height * 0.8) {
-      targetElement.classList.add('drop-after');
-    } else {
-      // Middle zone - drop INTO the folder
-      targetElement.classList.add('drop-into');
-    }
-  } else {
-    // For bookmarks, use 50/50 split for equal drop zones
-    // Top half = drop before, bottom half = drop after
-    if (y < height * 0.5) {
-      targetElement.classList.add('drop-before');
-    } else {
-      targetElement.classList.add('drop-after');
-    }
-  }
+function handleDragOver(_e, _targetElement) {
+  // No-op: drop-before/after/into is now handled inline in folder header and bookmark dragover listeners.
 }
 
 function removeDropIndicator(element) {
@@ -5400,6 +5371,20 @@ async function handleDrop(draggedId, targetId, targetElement, dropState) {
 
       // Calculate new index based on drop position
       targetIndex = dropBefore ? targetIndex : targetIndex + 1;
+
+      // Adjust for same-parent moves: chrome.bookmarks.move removes the dragged item first,
+      // which shifts down all items after it. If dragged item is in the same parent and
+      // comes before the target, subtract 1 to account for that shift.
+      const draggedParent = findParentById(bookmarkTree, draggedId);
+      const draggedParentId = draggedParent ? draggedParent.id : undefined;
+      if (draggedParentId === targetParentId) {
+        const draggedIndex = draggedParent
+          ? draggedParent.children.findIndex(c => c.id === draggedId)
+          : bookmarkTree.findIndex(i => i.id === draggedId);
+        if (draggedIndex < targetIndex) {
+          targetIndex -= 1;
+        }
+      }
     }
 
     // Check if dropping a folder into itself or its descendants (prevent invalid moves)
