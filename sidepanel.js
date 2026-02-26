@@ -8389,6 +8389,60 @@ async function bulkDeleteItems() {
   }
 }
 
+// Bulk open selected items in new tabs
+async function bulkOpenItems() {
+  if (selectedItems.size === 0) {
+    alert('No items selected. Please select bookmarks to open.');
+    return;
+  }
+  const tree = await chrome.bookmarks.getTree();
+  const allBookmarks = tree[0].children || [];
+  const urlsToOpen = [];
+  for (const itemId of selectedItems) {
+    const item = findBookmarkById(allBookmarks, itemId);
+    if (!item) continue;
+    if (item.url) {
+      urlsToOpen.push(item.url);
+    } else if (item.children) {
+      getAllBookmarksInFolder(item).forEach(b => urlsToOpen.push(b.url));
+    }
+  }
+  if (urlsToOpen.length === 0) {
+    alert('No bookmarks found in the selection to open.');
+    return;
+  }
+  for (const url of urlsToOpen) {
+    chrome.tabs.create({ url, active: false });
+  }
+}
+
+// Bulk open selected items each in a new window
+async function bulkOpenInWindows() {
+  if (selectedItems.size === 0) {
+    alert('No items selected. Please select bookmarks to open.');
+    return;
+  }
+  const tree = await chrome.bookmarks.getTree();
+  const allBookmarks = tree[0].children || [];
+  const urlsToOpen = [];
+  for (const itemId of selectedItems) {
+    const item = findBookmarkById(allBookmarks, itemId);
+    if (!item) continue;
+    if (item.url) {
+      urlsToOpen.push(item.url);
+    } else if (item.children) {
+      getAllBookmarksInFolder(item).forEach(b => urlsToOpen.push(b.url));
+    }
+  }
+  if (urlsToOpen.length === 0) {
+    alert('No bookmarks found in the selection to open.');
+    return;
+  }
+  for (const url of urlsToOpen) {
+    chrome.windows.create({ url });
+  }
+}
+
 // Get all bookmarks in a folder recursively
 function getAllBookmarksInFolder(folder) {
   const bookmarks = [];
@@ -9674,6 +9728,71 @@ changelogModal.addEventListener('keydown', (e) => {
     renderBookmarks();
   });
 
+  // Long-press to enter multi-select mode
+  let longPressTimer = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  const LONG_PRESS_MS = 750;
+  const LONG_PRESS_DRIFT_PX = 8;
+
+  function enterMultiSelectFromLongPress(itemEl) {
+    if (!multiSelectMode) {
+      multiSelectMode = true;
+      multiSelectToggle.style.background = 'var(--md-sys-color-primary)';
+      multiSelectToggle.style.color = 'var(--md-sys-color-on-primary)';
+      multiSelectToggle.setAttribute('aria-pressed', 'true');
+      document.getElementById('bulkActionsBar').classList.remove('hidden');
+      renderBookmarks();
+    }
+    // Add the long-pressed item to the selection
+    const container = itemEl.closest('.bookmark-item, .folder-item');
+    if (container && container.dataset.id) {
+      selectedItems.add(container.dataset.id);
+      const checkbox = container.querySelector('.item-checkbox');
+      if (checkbox) checkbox.checked = true;
+      updateSelectedCount();
+    }
+  }
+
+  bookmarkList.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // Don't trigger on interactive elements
+    if (e.target.closest('.bookmark-menu-btn, .item-checkbox, input, button, a')) return;
+    const item = e.target.closest('.bookmark-item, .folder-header');
+    if (!item) return;
+    longPressStartX = e.clientX;
+    longPressStartY = e.clientY;
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      enterMultiSelectFromLongPress(item);
+    }, LONG_PRESS_MS);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!longPressTimer) return;
+    const dx = e.clientX - longPressStartX;
+    const dy = e.clientY - longPressStartY;
+    if (Math.sqrt(dx * dx + dy * dy) > LONG_PRESS_DRIFT_PX) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  });
+
+  // Cancel long-press if drag starts (capture phase so it fires before dragstart handlers)
+  bookmarkList.addEventListener('dragstart', () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }, true);
+
   // Bulk actions event delegation
   bookmarkList.addEventListener('change', (e) => {
     if (e.target.classList.contains('item-checkbox')) {
@@ -9706,6 +9825,14 @@ changelogModal.addEventListener('keydown', (e) => {
     });
     selectedItems.clear();
     updateSelectedCount();
+  });
+
+  document.getElementById('bulkOpenTabs').addEventListener('click', async () => {
+    await bulkOpenItems();
+  });
+
+  document.getElementById('bulkOpenWindows').addEventListener('click', async () => {
+    await bulkOpenInWindows();
   });
 
   document.getElementById('bulkRecheck').addEventListener('click', async () => {
