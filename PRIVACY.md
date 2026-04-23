@@ -1,6 +1,6 @@
 # Privacy Policy for Bookmark Manager Zero
 
-**Last Updated:** December 18, 2025
+**Last Updated:** April 22, 2026
 
 ## Overview
 
@@ -93,6 +93,22 @@ The extension may communicate with the following third-party services **only whe
 - **Purpose:** Retrieve website favicon icons
 - **Service:** `www.google.com/s2/favicons`
 
+### 8. **Supabase** (Optional)
+- **When Used:** Only if you choose "Supabase" token storage mode during GitLab sync setup
+- **Data Sent:** Your GitLab Personal Access Token, encrypted with AES-256-GCM keyed to your Supabase user ID before transmission
+- **Purpose:** Store your encrypted GitLab PAT in the cloud so it can be automatically synced and rotated across all your devices running BMZ
+- **Service:** `supabase.co`
+- **Privacy Policy:** https://supabase.com/privacy
+- **Note:** The plaintext token is never transmitted. Only the encrypted blob is stored. If you use Local mode, nothing is sent to Supabase.
+
+### 9. **GitLab OAuth** (Optional)
+- **When Used:** Only if you choose to sign in via GitLab to enable Supabase token sync
+- **Data Sent:** OAuth authorization request (no credentials — handled entirely by GitLab's own login page)
+- **Purpose:** Authenticate with Supabase using your GitLab account to establish a session for encrypted token storage
+- **Service:** `gitlab.com`
+- **Privacy Policy:** https://about.gitlab.com/privacy/
+- **Note:** BMZ never sees your GitLab password. Authentication is handled by Chrome's `identity` API in a secure browser popup.
+
 ## User Control
 
 You have complete control over external service usage:
@@ -150,6 +166,11 @@ The extension requests the following permissions:
 - **What:** Render the extension UI alongside web pages for easy access
 - **Scope:** Side panel display only (no page interaction)
 
+### `identity`
+- **Why:** To enable Supabase cross-device token sync, the extension authenticates users with GitLab via OAuth, which requires launching a secure browser popup
+- **What:** `chrome.identity.launchWebAuthFlow` opens a GitLab OAuth login page in a browser popup, generating a Supabase session token used to encrypt and access the user's stored GitLab PAT
+- **Scope:** Used only during sign-in. No identity data is collected, stored, or transmitted beyond what is required to establish the OAuth session.
+
 ### `<all_urls>` (Host Permissions)
 - **Why:** Check if bookmark links are still working
 - **What:** Send HEAD requests to bookmark URLs to verify availability
@@ -163,7 +184,7 @@ The extension requests the following permissions:
 - Use analytics or tracking services
 - Display advertisements
 - Collect personally identifiable information
-- Transmit data to our servers (we don't have any servers)
+- Transmit data to our servers (we don't operate servers; optional Supabase cloud sync uses Supabase's infrastructure and only stores your encrypted GitLab token when you explicitly enable it)
 
 ## Children's Privacy
 
@@ -196,7 +217,7 @@ https://gitlab.com/AbsoluteXYZero/BMZ-Chrome/
 ## Summary
 
 **Your privacy is important:**
-- ✅ All data stored locally on your device
+- ✅ All data stored locally on your device (optional encrypted cloud sync via Supabase when enabled)
 - ✅ No tracking or analytics
 - ✅ External services are optional and can be disabled
 - ✅ Full transparency about data usage

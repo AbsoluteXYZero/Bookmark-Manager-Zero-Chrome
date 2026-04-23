@@ -1,6 +1,24 @@
 ## Changelog
 
-### v4.4 (Current) - Bug Fixes
+### v4.7 (Current) - Supabase Token Sync & GitLab OAuth
+
+**New Features:**
+- **Supabase Cross-Device Token Sync** - GitLab PAT can now be stored encrypted in Supabase and automatically synced across all your BMZ devices. Token is encrypted with AES-256-GCM keyed to your Supabase UID — only you can decrypt it.
+- **GitLab OAuth Sign-In** - Connect your Supabase account via GitLab OAuth (`chrome.identity` delegated to background service worker). Enables silent token rotation across all devices without manual steps.
+- **Token Storage Mode Selector** - Choose between Local (on-device only) and Supabase (cross-device) storage when setting up or managing your GitLab token. Switch modes at any time from the GitLab Snippet Sync dialog.
+- **Auto Token Rotation** - When your GitLab PAT is near expiry, BMZ prompts you to rotate it. In Supabase mode, the new token is saved to the cloud automatically and all devices update silently. In Local mode, the new token is displayed for you to save manually.
+- **Reveal GitLab Token** - New button in Settings to view your currently stored GitLab PAT (with copy to clipboard).
+- **Supabase Quick-Load** - On a new device, select Supabase mode during setup and sign in to pull your token automatically — no need to re-enter your PAT.
+
+**Improvements:**
+- **Sync Button Opens Options Dialog** - The manual sync button now opens the full GitLab Snippet Sync dialog (sync from/to snippet, storage mode switch, create/select snippet, disconnect) instead of triggering a direct sync.
+- **Startup Supabase Session Load** - Supabase session is now restored on extension load so token rotation works correctly from the first auto-sync interval.
+- **Auto-Sync on Startup** - Auto-sync now starts immediately on load if a token and snippet ID are already stored, instead of waiting for the first manual interaction.
+- **Disconnect Dialog** - In Supabase mode, disconnecting now offers "This device only" or "All devices" options.
+
+---
+
+### v4.4 - Bug Fixes
 
 **Bug Fixes:**
 - **Fixed GitLab Token Link** - "Create Token on GitLab" button now points to the correct URL after GitLab moved Personal Access Tokens from `/-/profile/` to `/-/user_settings/`.

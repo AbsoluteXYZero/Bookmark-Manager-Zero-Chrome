@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Bookmark Manager Zero",
-  "version": "4.4",
+  "version": "4.7",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAso7uoAvDLKJzTnB0k/RUm9j0xvZO1jsBTQJY+oF1N9e6LXjpn5dVhAFp7neTBJMV+Z4wuY+DWWpFSoJAl+mmXmOb87EBG12tqhWXKNWLkPvEOLg5N2q2ndoW+HV15Glk8UavrHaq6ShTR10JN2w0fb8rc0wZ+VzwSx0Cn43SdPLw9lw8g7zkaehfdF9UzReIKt/IDKgMZVgviI6Q1ZITQM5Q1EZFS20IYmyft4QSsdYYIU3vNavMnFn0irBbG7wVT++HsFmq75GvkBrDh3y7HcBcxdPm3VBxqcLqF/qi3Hzprfa7qtmc+i8U7jSa9LfceAp8XcNx5CB8OuyTjYZxdwIDAQAB",
   "description": "A modern interface for the native Chrome bookmark manager.",
   "permissions": [
     "bookmarks",
     "storage",
     "tabs",
-    "sidePanel"
+    "sidePanel",
+    "identity"
   ],
   "host_permissions": [
     "<all_urls>"

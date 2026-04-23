@@ -545,9 +545,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 const BLOCKLIST_SOURCES = [
   {
     name: 'URLhaus (Active)',
-    // Official abuse.ch list - actively distributing malware URLs (updated every 5 minutes)
-    // Using cors-anywhere alternative proxy
-    url: 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent('https://urlhaus.abuse.ch/downloads/text/'),
+    // Fetched from dedicated GitHub repo (updated daily via GitHub Actions)
+    url: 'https://raw.githubusercontent.com/AbsoluteXYZero/urlhaus-list/main/urlhaus-active.txt',
     format: 'urlhaus_text' // Full URLs with paths
   },
   {
@@ -1467,6 +1466,17 @@ const checkURLSafety = async (url, bypassCache = false) => {
 
 // Listen for messages from the frontend
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'launchWebAuthFlow') {
+    chrome.identity.launchWebAuthFlow({ url: request.url, interactive: true }, (responseUrl) => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ responseUrl });
+      }
+    });
+    return true;
+  }
+
   if (request.action === "checkLinkStatus") {
     // Validate URL before checking
     const safeUrl = sanitizeUrl(request.url);
