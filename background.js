@@ -51,6 +51,8 @@ class ConcurrencyLimiter {
     this.maxConcurrent = maxConcurrent;
     this.running = 0;
     this.queue = [];
+    /* [ZeroLabs] 2026-06-20 10:50 AM - added: jitter to spread DNS lookups over time */
+    this.jitterMs = 0; // Random 0..jitterMs delay before each request
   }
 
   async run(fn) {
@@ -59,6 +61,10 @@ class ConcurrencyLimiter {
     }
     this.running++;
     try {
+      // Stagger request starts so a batch of DNS lookups isn't fired as one wall
+      if (this.jitterMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, Math.random() * this.jitterMs));
+      }
       return await fn();
     } finally {
       this.running--;
@@ -66,11 +72,44 @@ class ConcurrencyLimiter {
       if (next) next();
     }
   }
+
+  /* [ZeroLabs] 2026-06-20 10:50 AM - added: live-adjustable cap for settings slider */
+  setMax(n) {
+    const next = Math.max(1, Math.min(20, Number(n) || this.maxConcurrent));
+    const increased = next > this.maxConcurrent;
+    this.maxConcurrent = next;
+    // If the cap grew, wake enough queued waiters to fill the newly freed slots.
+    if (increased) {
+      let slots = this.maxConcurrent - this.running;
+      while (slots-- > 0) {
+        const resolve = this.queue.shift();
+        if (!resolve) break;
+        resolve();
+      }
+    }
+  }
+
+  /* [ZeroLabs] 2026-06-20 10:50 AM - added: live-adjustable jitter for settings slider */
+  setJitter(ms) {
+    this.jitterMs = Math.max(0, Math.min(1000, Number(ms) || 0));
+  }
 }
 
 // Global concurrency limiter for all network requests
-// With parallel link+safety checks, actual concurrent requests can be up to 20 (10 bookmarks × 2 checks each)
-const networkLimiter = new ConcurrencyLimiter(10);
+/* [ZeroLabs] 2026-06-20 10:35 AM - edited: lower cap to spare home DNS resolver */
+// Each link check is a DNS lookup + connection to the bookmark's host. A high
+// cap dumps a wall of simultaneous lookups on a local resolver (e.g. AdGuard
+// Home) and briefly stalls the whole network. With link+safety each taking a
+// slot, a cap of 5 means at most ~10 requests in flight -- gentle on DNS, and
+// barely slower since per-request latency, not throughput, is the bottleneck.
+const MAX_CONCURRENT_NETWORK = 5; // Default; user-tunable via Settings slider
+const networkLimiter = new ConcurrencyLimiter(MAX_CONCURRENT_NETWORK);
+
+/* [ZeroLabs] 2026-06-20 10:50 AM - added: apply saved scan concurrency + jitter on startup */
+chrome.storage.local.get(['scanConcurrency', 'scanJitter']).then(({ scanConcurrency, scanJitter }) => {
+  if (scanConcurrency) networkLimiter.setMax(scanConcurrency);
+  if (scanJitter !== undefined) networkLimiter.setJitter(scanJitter);
+}).catch(() => {});
 
 // URL validation utilities inlined to avoid module loading issues
 const BLOCKED_SCHEMES = ['file', 'javascript', 'data', 'vbscript'];
@@ -1477,6 +1516,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  /* [ZeroLabs] 2026-06-20 10:50 AM - added: live update scan concurrency from slider */
+  if (request.action === "setScanConcurrency") {
+    networkLimiter.setMax(request.value);
+    sendResponse({ success: true, value: networkLimiter.maxConcurrent });
+    return true;
+  }
+
+  /* [ZeroLabs] 2026-06-20 10:50 AM - added: live update scan jitter from slider */
+  if (request.action === "setScanJitter") {
+    networkLimiter.setJitter(request.value);
+    sendResponse({ success: true, value: networkLimiter.jitterMs });
+    return true;
+  }
+
   if (request.action === "checkLinkStatus") {
     // Validate URL before checking
     const safeUrl = sanitizeUrl(request.url);
@@ -1486,7 +1539,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     const bypassCache = request.bypassCache || false;
-    checkLinkStatus(safeUrl, bypassCache).then(status => {
+    /* [ZeroLabs] 2026-06-20 10:35 AM - edited: route through global limiter (DNS) */
+    // Front-end auto-check uses this handler; without the limiter it bypassed the
+    // global cap and flooded DNS. Share the same limiter as the background scan.
+    networkLimiter.run(() => checkLinkStatus(safeUrl, bypassCache)).then(status => {
       sendResponse({ status });
     });
     return true; // Required to indicate an asynchronous response.
@@ -1501,7 +1557,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
 
     const bypassCache = request.bypassCache || false;
-    checkURLSafety(safeUrl, bypassCache).then(result => {
+    /* [ZeroLabs] 2026-06-20 10:35 AM - edited: route through global limiter (DNS) */
+    networkLimiter.run(() => checkURLSafety(safeUrl, bypassCache)).then(result => {
       // Handle both old cache format (string) and new format (object)
       if (typeof result === 'string') {
         sendResponse({ status: result, sources: [] });
