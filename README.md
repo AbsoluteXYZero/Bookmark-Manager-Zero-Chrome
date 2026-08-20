@@ -8,8 +8,8 @@
 </p>
 
 <p align="center">
-  <!-- [ZeroLabs] 2026-08-17 3:28 PM - edited: version badge to 5.1 -->
-  <img src="https://img.shields.io/badge/version-5.1-blue" alt="Version">
+  <!-- [ZeroLabs] 2026-08-19 7:12 PM - edited: version badge to 5.2 -->
+  <img src="https://img.shields.io/badge/version-5.2-blue" alt="Version">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   </a>
