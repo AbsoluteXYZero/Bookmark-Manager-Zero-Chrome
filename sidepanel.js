@@ -5354,6 +5354,16 @@ let checkedBookmarks = new Set(); // Track which bookmarks have been checked to 
 let scanCancelled = false; // Flag to cancel ongoing scans
 /* [ZeroLabs] 2026-06-20 12:21 AM - added: single-source scan control state */
 let autoScanDepth = 0; // Re-entrancy count for front-end autoCheck loops
+/* [ZeroLabs] 2026-08-28 - added: one counter across overlapping auto-checks */
+// autoCheckBookmarkStatuses runs once per folder expansion and can overlap
+// itself - that is what autoScanDepth tracks. Each invocation used to keep its
+// OWN scannedCount and totalToScan while writing to the single 'auto-check'
+// status, so the bar flipped between two unrelated tallies ("3/10", "1/4",
+// "4/10") and looked like it was jumping around rather than counting up.
+// Shared here so overlapping scans report as one coherent total, and reset when
+// the last of them finishes.
+let autoScanTotal = 0;
+let autoScanDone = 0;
 let backgroundScanActive = false; // Whether the worker scan is running
 // One owner for the Stop/Rescan buttons: Stop visible iff any scan is active
 function updateScanControls() {
@@ -5400,11 +5410,16 @@ function setScanningStatus(operationId, message) {
   activeOperations.add(operationId);
   operationDetails.set(operationId, message);
 
-  // Update UI
-  if (scanStatusBar) scanStatusBar.classList.add('scanning');
-  if (scanProgress) scanProgress.textContent = message;
-
-  console.log(`[Status] Started: ${operationId} - "${message}"`);
+  /* [ZeroLabs] 2026-08-28 - fixed: two operations fought over the bar */
+  // This wrote `message` straight to the bar, so whichever operation called most
+  // recently won. With two running at once - an auto-check alongside a
+  // background scan, or a full rescan - the display alternated between their two
+  // counters and appeared to jump around instead of counting up.
+  //
+  // The operation's message is recorded above; updateStatusBar picks which one is
+  // shown, and it picks the same one every time (the most recently STARTED, by
+  // Set insertion order, which re-adding an existing id does not disturb).
+  updateStatusBar();
 }
 
 // Centralized function to clear scanning status for a specific operation
@@ -6791,7 +6806,8 @@ async function autoCheckBookmarkStatuses() {
 
   // Update status bar to show scanning using centralized system
   const totalToScan = bookmarksToCheck.length;
-  setScanningStatus('auto-check', `Scanning: 0/${totalToScan}`);
+  autoScanTotal += totalToScan;
+  setScanningStatus('auto-check', `Scanning: ${autoScanDone}/${autoScanTotal}`);
 
   /* [ZeroLabs] 2026-06-20 12:21 AM - edited: re-entrant scan + central button owner */
   // Only the outermost scan clears the cancel flag, so a Stop pressed during
@@ -6847,7 +6863,8 @@ async function autoCheckBookmarkStatuses() {
         // synchronously reset the bar to Ready, leaving a stale scan message
         // behind with no operation left to correct it.
         scannedCount++;
-        setScanningStatus('auto-check', 'Scanning: ' + scannedCount + '/' + totalToScan);
+        autoScanDone++;
+        setScanningStatus('auto-check', 'Scanning: ' + autoScanDone + '/' + autoScanTotal);
 
         return result;
       } catch (error) {
@@ -6861,7 +6878,8 @@ async function autoCheckBookmarkStatuses() {
 
         // Update progress even on error
         scannedCount++;
-        setScanningStatus('auto-check', 'Scanning: ' + scannedCount + '/' + totalToScan);
+        autoScanDone++;
+        setScanningStatus('auto-check', 'Scanning: ' + autoScanDone + '/' + autoScanTotal);
 
         return errorResult;
       }
@@ -6894,6 +6912,9 @@ async function autoCheckBookmarkStatuses() {
 
     // Only the last overlapping scan finalizes the status bar
     if (autoScanDepth === 0) {
+      // Last overlapping scan out resets the shared tally
+      autoScanTotal = 0;
+      autoScanDone = 0;
       checkedBookmarks.clear();
       const wasStopped = scanCancelled;
       /* [ZeroLabs] 2026-08-28 - edited: hold the outcome as the operation itself */
