@@ -559,7 +559,13 @@ function isSameDay(timestamp1, timestamp2) {
             console.log(`[Blocklist] Loaded last update timestamp from storage: ${new Date(blocklistLastUpdate).toISOString()}`);
 
             const now = Date.now();
-            if (!isSameDay(now, blocklistLastUpdate)) {
+            /* [ZeroLabs] 2026-08-28 - added: do not preload what this device will never use */
+            // This preload only ever checked staleness, so a device with safety
+            // checking switched OFF still downloaded all ten blocklists on every
+            // startup - bandwidth spent on data nothing would read.
+            if (!(await isSafetyCheckingKnownOn())) {
+                console.log('[Startup] Safety checking is not known to be on. Skipping blocklist preload; it loads on demand if a scan needs it.');
+            } else if (!isSameDay(now, blocklistLastUpdate)) {
                 console.log('[Startup] Blocklist is stale on startup. Pre-loading in background...');
                 updateBlocklistDatabase(); // Run in background
             }
@@ -574,9 +580,17 @@ function isSameDay(timestamp1, timestamp2) {
 // On install/update, force a blocklist download.
 chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === 'install' || details.reason === 'update') {
-    console.log(`[Setup] Extension ${details.reason}ed. Pre-loading blocklist database...`);
-    // Don't need to await, let it run in the background
-    updateBlocklistDatabase();
+    /* [ZeroLabs] 2026-08-28 - added: same gate as the startup preload */
+    // An update fires this on every version bump, so on a device with safety
+    // checking off it was a guaranteed ten-list download for nothing.
+    (async () => {
+      if (!(await isSafetyCheckingKnownOn())) {
+        console.log(`[Setup] Extension ${details.reason}ed. Safety checking is not known to be on, skipping blocklist preload.`);
+        return;
+      }
+      console.log(`[Setup] Extension ${details.reason}ed. Pre-loading blocklist database...`);
+      updateBlocklistDatabase();
+    })();
   }
 });
 
@@ -784,6 +798,20 @@ const checkURLVoidScraping = async (url) => {
         console.log(`[URLVoid Scraping] All proxies failed for ${hostname}`);
         return 'unknown';
       }
+    }
+
+    /* [ZeroLabs] 2026-08-28 - fixed: "no report" was being counted as CLEAN */
+    // URLVoid answers HTTP 200 with an ordinary-looking "Report Not Found" page
+    // for any domain it has never examined. That page contains no "detected"
+    // either, so the count below came out zero and the domain was recorded as
+    // SAFE - when the truth was that nobody had ever looked at it. A false clean
+    // is the one direction a safety check must never fail in.
+    //
+    // Detected by the page's own marker rather than by size: the same page
+    // measures ~12.7KB but that varies, while a real result page is ~36KB.
+    if (/Report Not Found/i.test(html)) {
+      console.log(`[URLVoid Scraping] ${hostname}: no report - URLVoid has never scanned it`);
+      return 'unknown'; // Abstain. 'safe' would be a claim nothing supports.
     }
 
     const detectedPattern = /detected/gi;
@@ -1059,6 +1087,32 @@ const downloadBlocklistSource = async (source) => {
     console.error(`[Blocklist] ${source.name} error:`, error.message);
     return { domains: [], count: 0 };
   }
+};
+
+/* [ZeroLabs] 2026-08-28 - added: the blocklists are safety checking's data */
+// Absent means on, matching how startBackgroundScan reads this setting, so a
+// storage read that comes back empty never silently disables the feature. Only
+// an explicit false counts as off.
+const isSafetyCheckingEnabled = async () => {
+  const { safetyCheckingEnabled } = await chrome.storage.local.get('safetyCheckingEnabled');
+  return safetyCheckingEnabled !== false;
+};
+
+/* [ZeroLabs] 2026-08-28 - added: the eager preloads must not guess */
+// The panel mirrors the real setting into extension storage when it opens, but
+// the startup block and onInstalled both run BEFORE any panel exists - on a
+// fresh profile, or on the first reload after this fix, the key is simply not
+// there yet. Defaulting to "on" there means committing to a ~97 MB download for
+// a feature that may well be switched off.
+//
+// So the eager preloads require an explicit yes and skip on unknown. Nothing is
+// lost by skipping: the preload only warms the database, and every path that
+// actually NEEDS it (ensureBlocklistReady, startBackgroundScan) fetches it on
+// demand and keeps defaulting to on, which is safe because by the time either
+// runs the panel has mirrored the real value.
+const isSafetyCheckingKnownOn = async () => {
+  const { safetyCheckingEnabled } = await chrome.storage.local.get('safetyCheckingEnabled');
+  return safetyCheckingEnabled === true;
 };
 
 // Download and aggregate all blocklist sources
@@ -1620,6 +1674,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "ensureBlocklistReady") {
     // Trigger blocklist update if needed, then wait for it to be ready
     (async () => {
+      /* [ZeroLabs] 2026-08-28 - added: nothing to make ready when safety is off */
+      // Answered rather than ignored: callers await this, and a silent skip would
+      // leave them waiting. The UI is told the download is over as well, so no
+      // listener is left holding a progress message that never resolves.
+      if (!(await isSafetyCheckingEnabled())) {
+        chrome.runtime.sendMessage({
+          type: 'blocklistComplete',
+          domains: maliciousUrlsSet.size,
+          totalEntries: maliciousUrlsSet.size,
+          sources: 0,
+          success: true
+        }).catch(() => {});
+        sendResponse({ ready: true, size: maliciousUrlsSet.size, skipped: true });
+        return;
+      }
+
       const now = Date.now();
       if (!isSameDay(now, blocklistLastUpdate) || maliciousUrlsSet.size === 0) {
         console.log('[Blocklist] Ensuring database is up to date (stale or empty)...');
@@ -1716,7 +1786,13 @@ async function startBackgroundScan(options = {}) {
     // Ensure blocklist database is ready (triggers update if needed, then waits for completion)
     // This prevents all bookmarks from getting 'unknown' safety status
     const now = Date.now();
-    if (!isSameDay(now, blocklistLastUpdate) || maliciousUrlsSet.size === 0) {
+    /* [ZeroLabs] 2026-08-28 - added: a link-only scan needs no security database */
+    // safetyCheckingEnabled is read above and honoured per bookmark further down,
+    // but the download in front of them did not consult it - so a link-only scan
+    // still paid for all ten lists before checking a single link.
+    if (!safetyCheckingEnabled) {
+      console.log('[Background Scan] Safety checking is off. Skipping the security database.');
+    } else if (!isSameDay(now, blocklistLastUpdate) || maliciousUrlsSet.size === 0) {
       console.log('[Background Scan] Ensuring blocklist database is up to date (stale or empty)...');
       chrome.runtime.sendMessage({
         type: 'scanStatus',
@@ -1965,3 +2041,789 @@ function getBackgroundScanStatus() {
 // Set up Side Panel to open when clicking the action icon
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   .catch((error) => console.error("Error setting up side panel behavior:", error));
+
+/* [ZeroLabs] 2026-08-26 11:43 PM - added: background snippet push (see also: Bookmark-Manager-Zero-Chrome/sidepanel.js, Bookmark-Manager-Zero-Firefox/background.js) */
+// ============================================================================
+// BACKGROUND SNIPPET PUSH
+// ============================================================================
+// A bookmark added from the browser itself -- the star button, Ctrl+D, the
+// native bookmark manager -- fires while the side panel is closed, so the
+// panel's listener never saw it and the change sat unsynced until the next time
+// the panel happened to be opened. These listeners live in the service worker,
+// which the bookmarks events wake on their own, so the push no longer depends on
+// the panel being on screen.
+//
+// Two deliberate limits, both because nobody is watching this one:
+//
+// 1. Only bookmarks.json is written. bmz-meta.json (Quick Access pins) is left
+//    alone. GitLab rewrites only the files named in the request, and the worker
+//    has never loaded the pins, so naming that file would blank them.
+// 2. The staleness guard here is version equality alone. The panel can fall back
+//    to a content diff when the versions disagree; the worker deliberately does
+//    not and defers to the panel instead. Skipping a push costs a delay, pushing
+//    a stale tree costs somebody else's bookmarks.
+//
+// setTimeout cannot carry the debounce: an idle worker is torn down and a
+// pending timer dies with it. chrome.alarms survives that, and creating an alarm
+// under an existing name replaces it, which is exactly the debounce reset.
+
+const SNIPPET_PUSH_ALARM = 'bmz-snippet-push';
+const SNIPPET_PUSH_DELAY_MIN = 0.5; // 30s, the shortest alarm Chrome allows
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: poll for changes made elsewhere */
+// The push is event-driven and needs no interval, but nothing tells us when
+// ANOTHER device writes the snippet, so that half has to be asked for. Five
+// minutes matches the panel's existing cycle. GitLab's authenticated limit is
+// 600 requests a minute, so roughly 24 an hour is not close to anything; the
+// reasons not to go faster are abuse detection and waking the worker for a
+// question that is almost always answered "nothing changed".
+const SNIPPET_POLL_ALARM = 'bmz-snippet-poll';
+const SNIPPET_POLL_PERIOD_MIN = 5;
+const SNIPPET_MIN_SYNC_INTERVAL_MS = 60000;
+const SNIPPET_GITLAB_TIMEOUT_MS = 15000;
+const SNIPPET_MAX_PUSH_ATTEMPTS = 3;
+
+async function snippetFetchGitLab(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SNIPPET_GITLAB_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`GitLab did not respond within ${Math.round(SNIPPET_GITLAB_TIMEOUT_MS / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Mirrors calculateChecksum in sidepanel.js. The excluded fields are the ones
+// that change on every write, so the hash covers the bookmarks alone.
+async function snippetCalculateChecksum(data) {
+  const { checksum, lastModified, version, editLock, ...dataToHash } = data;
+  const str = JSON.stringify(dataToHash, Object.keys(dataToHash).sort());
+  const buffer = new TextEncoder().encode(str);
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+// Mirrors chromeBookmarksToSnippetFormat in sidepanel.js, including promoting
+// Bookmarks Menu and Mobile Bookmarks out of Other Bookmarks so the file stays
+// in the Firefox-native shape every client reads.
+async function snippetTreeToSnippetFormat(chromeTree) {
+  const convertNode = (node) => {
+    if (node.url) {
+      return {
+        id: node.id,
+        title: node.title,
+        url: node.url,
+        type: 'bookmark',
+        dateAdded: node.dateAdded || Date.now()
+      };
+    }
+    const folder = {
+      id: node.id,
+      title: node.title || node.name || 'Unnamed Folder',
+      name: node.title || node.name || 'Unnamed Folder',
+      type: 'folder',
+      dateAdded: node.dateAdded || Date.now(),
+      children: []
+    };
+    if (node.children) {
+      folder.children = node.children.map(child => convertNode(child));
+    }
+    return folder;
+  };
+
+  const roots = {};
+  if (chromeTree[0] && chromeTree[0].children) {
+    for (const rootFolder of chromeTree[0].children) {
+      const key = rootFolder.id === '1' ? 'bookmark_bar' :
+                  rootFolder.id === '2' ? 'other' :
+                  rootFolder.id === '3' ? 'mobile' : 'unknown';
+      if (key !== 'unknown') {
+        roots[key] = convertNode(rootFolder);
+      }
+    }
+  }
+
+  if (roots.other && roots.other.children) {
+    const otherChildren = roots.other.children;
+
+    const menuFolderIndex = otherChildren.findIndex(child =>
+      child.type === 'folder' && child.title === 'Bookmarks Menu'
+    );
+    if (menuFolderIndex !== -1) {
+      const menuFolder = otherChildren.splice(menuFolderIndex, 1)[0];
+      roots.menu = {
+        id: 'menu',
+        title: 'Bookmarks Menu',
+        name: 'Bookmarks Menu',
+        type: 'folder',
+        dateAdded: menuFolder.dateAdded,
+        children: menuFolder.children
+      };
+    }
+
+    const mobileFolderIndex = otherChildren.findIndex(child =>
+      child.type === 'folder' && child.title === 'Mobile Bookmarks'
+    );
+    if (mobileFolderIndex !== -1) {
+      const mobileFolder = otherChildren.splice(mobileFolderIndex, 1)[0];
+      roots.mobile = {
+        id: 'mobile',
+        title: 'Mobile Bookmarks',
+        name: 'Mobile Bookmarks',
+        type: 'folder',
+        dateAdded: mobileFolder.dateAdded,
+        children: mobileFolder.children
+      };
+    }
+  }
+
+  if (!roots.menu) {
+    roots.menu = {
+      id: 'menu',
+      title: 'Bookmarks Menu',
+      name: 'Bookmarks Menu',
+      type: 'folder',
+      dateAdded: Date.now(),
+      children: []
+    };
+  }
+
+  const snippetData = {
+    version: 1,
+    checksum: '',
+    lastModified: Date.now(),
+    roots: roots
+  };
+
+  snippetData.checksum = await snippetCalculateChecksum(snippetData);
+  return snippetData;
+}
+
+// Everything the push needs, or null when this device is not set up to sync.
+// The token is decrypted with the same key derivation the panel uses, which is
+// why getDerivedKey is built from values a worker can also see.
+async function loadSnippetPushConfig() {
+  const stored = await chrome.storage.local.get([
+    'bmz_snippet_id',
+    'gitlab_token',
+    'snippet_local_version',
+    'snippet_last_sync'
+  ]);
+
+  /* [ZeroLabs] 2026-08-27 12:14 AM - added: say which piece is missing */
+  // This returning null used to be indistinguishable from "nothing to do", which
+  // made an unattended failure impossible to diagnose from the log alone.
+  if (!stored.bmz_snippet_id) {
+    console.log('[SnippetPush] No snippet connected on this device');
+    return null;
+  }
+  if (!stored.gitlab_token) {
+    console.log('[SnippetPush] No stored GitLab token');
+    return null;
+  }
+
+  const token = await decryptApiKey(stored.gitlab_token);
+  if (!token) {
+    console.warn('[SnippetPush] Stored token could not be decrypted in the worker');
+    return null;
+  }
+
+  return {
+    snippetId: stored.bmz_snippet_id,
+    token,
+    localVersion: Number(stored.snippet_local_version) || 0,
+    lastSync: Number(stored.snippet_last_sync) || 0
+  };
+}
+
+// The panel owns the same flag and reads it on open, so a push skipped while the
+// panel was closed still shows up as an amber sync button once it is opened.
+async function setSnippetReconcileBadge(needs) {
+  try {
+    await chrome.storage.local.set({ snippet_needs_reconcile: !!needs });
+  } catch (error) {
+    console.error('[SnippetPush] Failed to store reconcile flag:', error);
+  }
+
+  try {
+    await chrome.action.setBadgeText({ text: needs ? '!' : '' });
+    if (needs) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    }
+  } catch (error) {
+    // Badge unavailable; the stored flag still reaches the panel
+  }
+}
+
+// Same two-step read the panel does: the snippet API may or may not inline file
+// contents, so fall back to the raw endpoint when it does not.
+async function readRemoteSnippetBookmarks(config) {
+  const headers = {
+    'Authorization': `Bearer ${config.token}`,
+    'Content-Type': 'application/json'
+  };
+
+  const response = await snippetFetchGitLab(
+    `https://gitlab.com/api/v4/snippets/${config.snippetId}`,
+    { headers }
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to read Snippet: ${response.status}`);
+  }
+
+  const snippet = await response.json();
+  const bookmarkFile = snippet.files?.find(f =>
+    f.path === 'bookmarks.json' || f.file_name === 'bookmarks.json'
+  );
+  if (!bookmarkFile) {
+    throw new Error('Snippet does not contain bookmarks.json');
+  }
+
+  let content = bookmarkFile.content;
+  if (!content) {
+    const fileResponse = await snippetFetchGitLab(
+      `https://gitlab.com/api/v4/snippets/${config.snippetId}/files/main/bookmarks.json/raw`,
+      { headers }
+    );
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to fetch file content: ${fileResponse.status}`);
+    }
+    content = await fileResponse.text();
+  }
+
+  if (!content || content.trim() === '') return null;
+  return JSON.parse(content);
+}
+
+/* [ZeroLabs] 2026-08-27 2:26 AM - added: what a push would take out of the snippet */
+// Additions are safe to send unattended; removals are not. Comparing by URL
+// rather than by path means a moved or renamed bookmark still counts as present,
+// so only a genuine disappearance holds the push.
+function collectSnippetItems(snippetData) {
+  const items = new Map();
+  const walk = (node) => {
+    if (!node) return;
+    if (node.url) items.set(node.url, node.title || node.url);
+    if (Array.isArray(node.children)) node.children.forEach(walk);
+  };
+  if (snippetData && snippetData.roots) Object.values(snippetData.roots).forEach(walk);
+  return items;
+}
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: snippet items with the folders they live in */
+// collectSnippetItems answers "is this URL present". Creating one locally needs
+// to know where it belongs, so this carries the root it sits under and the
+// folder names below that root. Roots are handled by KEY rather than by title:
+// the snippet names its toolbar root differently depending on which browser
+// last wrote it, and the key is the one thing that survives that.
+function collectSnippetEntries(snippetData) {
+  const entries = new Map();
+  if (!snippetData || !snippetData.roots) return entries;
+
+  const walk = (node, rootKey, segments) => {
+    if (!node) return;
+    if (node.url) {
+      entries.set(node.url, { url: node.url, title: node.title || node.url, rootKey, segments });
+      return;
+    }
+    if (Array.isArray(node.children)) {
+      node.children.forEach(child => walk(
+        child,
+        rootKey,
+        child.url ? segments : segments.concat(child.title || child.name || 'Unnamed Folder')
+      ));
+    }
+  };
+
+  Object.keys(snippetData.roots).forEach(rootKey => {
+    const root = snippetData.roots[rootKey];
+    if (!root) return;
+    if (Array.isArray(root.children)) {
+      root.children.forEach(child => walk(
+        child,
+        rootKey,
+        child.url ? [] : [child.title || child.name || 'Unnamed Folder']
+      ));
+    }
+  });
+
+  return entries;
+}
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: let the worker place bookmarks itself */
+// Until now only the panel could create bookmarks, which is why additions made
+// on another device never arrived unless you opened BMZ. Chrome has no separate
+// menu root, so the snippet's menu folds into Other Bookmarks under a folder of
+// its own name, matching what snippetFormatToChromeBookmarks does in the panel.
+function chromeRootForSnippetKey(rootKey) {
+  switch (rootKey) {
+    case 'bookmark_bar': return { id: '1', prefix: [] };
+    case 'other': return { id: '2', prefix: [] };
+    case 'menu': return { id: '2', prefix: ['Bookmarks Menu'] };
+    case 'mobile': return { id: '3', prefix: [] };
+    default: return null;
+  }
+}
+
+async function resolveOrCreateFolderUnder(parentId, segments) {
+  let currentId = parentId;
+  for (const segment of segments) {
+    const children = await chrome.bookmarks.getChildren(currentId);
+    let match = children.find(child => !child.url && child.title === segment);
+    if (!match) {
+      match = await chrome.bookmarks.create({ parentId: currentId, title: segment });
+    }
+    currentId = match.id;
+  }
+  return currentId;
+}
+
+async function createSnippetItemsLocally(entries) {
+  let created = 0;
+
+  // Shallower folders first, so a parent exists before anything inside it
+  const ordered = [...entries].sort((a, b) => a.segments.length - b.segments.length);
+
+  for (const entry of ordered) {
+    try {
+      const root = chromeRootForSnippetKey(entry.rootKey);
+      if (!root) continue;
+
+      const parentId = await resolveOrCreateFolderUnder(root.id, root.prefix.concat(entry.segments));
+      await chrome.bookmarks.create({ parentId, title: entry.title, url: entry.url });
+      created++;
+    } catch (error) {
+      // A URL the browser refuses must not take the rest of the sync with it
+      console.warn('[SnippetPush] Could not create locally:', entry.url, error.message);
+    }
+  }
+
+  return created;
+}
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: remember what this device did (see also: Bookmark-Manager-Zero-Firefox/background.js) */
+// A bookmark present here but not in the snippet is either something you just
+// added or something another device deleted, and those want opposite answers.
+// The bookmarks events say which, and until now the listeners discarded the
+// payload. Recording it is what lets an addition sync silently while a deletion
+// defers for consent, with no guessing about intent.
+//
+// Keyed by URL because that is what survives the round trip through the snippet.
+// Cleared on every successful sync: once both sides agree, there is nothing left
+// for these to explain.
+async function recordLocalBookmarkEvent(kind, node) {
+  if (!node) return;
+
+  // Deleting a folder fires one event for the folder, never one per bookmark
+  // inside it, so the whole subtree has to be walked or those URLs go unrecorded
+  // and their deletion looks like it happened somewhere else.
+  const urls = [];
+  const walk = (n) => {
+    if (!n) return;
+    if (n.url) urls.push(n.url);
+    if (Array.isArray(n.children)) n.children.forEach(walk);
+  };
+  walk(node);
+  if (urls.length === 0) return;
+
+  const key = kind === 'created' ? 'snippet_local_created' : 'snippet_local_deleted';
+  const opposite = kind === 'created' ? 'snippet_local_deleted' : 'snippet_local_created';
+
+  try {
+    const stored = await chrome.storage.local.get([key, opposite]);
+    const list = new Set(stored[key] || []);
+    const otherList = new Set(stored[opposite] || []);
+
+    urls.forEach(url => {
+      list.add(url);
+      // Re-adding something you deleted cancels the deletion, and vice versa, so
+      // the two lists can never disagree about the same URL.
+      otherList.delete(url);
+    });
+
+    await chrome.storage.local.set({
+      [key]: Array.from(list).slice(-2000),
+      [opposite]: Array.from(otherList)
+    });
+  } catch (error) {
+    console.error('[SnippetPush] Could not record local bookmark event:', error);
+  }
+}
+
+/* [ZeroLabs] 2026-08-27 1:47 PM - added: record edits, not just creates and deletes */
+// A renamed or moved bookmark keeps its URL, so it is invisible to the
+// created/deleted lists, and comparing titles alone cannot say WHOSE rename it
+// is. Without this, two browsers holding different titles for the same URL each
+// see a difference, each push their own, and they revert each other forever.
+async function recordLocalBookmarkEdit(id, explicitUrl) {
+  try {
+    let url = explicitUrl;
+    if (!url) {
+      // onMoved carries only parent ids, and onChanged only carries the fields
+      // that changed, so the URL usually has to be looked up.
+      const nodes = await chrome.bookmarks.get(id);
+      url = nodes && nodes[0] && nodes[0].url;
+    }
+    if (!url) return; // Folders are represented by the bookmarks inside them
+
+    const stored = await chrome.storage.local.get('snippet_local_edited');
+    const list = new Set(stored.snippet_local_edited || []);
+    list.add(url);
+    await chrome.storage.local.set({ snippet_local_edited: Array.from(list).slice(-2000) });
+  } catch (error) {
+    console.error('[SnippetPush] Could not record local edit:', error);
+  }
+}
+
+async function clearLocalBookmarkEvents() {
+  await chrome.storage.local.set({
+    snippet_local_created: [],
+    snippet_local_deleted: [],
+    snippet_local_edited: []
+  });
+}
+
+/* [ZeroLabs] 2026-08-27 2:02 PM - removed: applyRemoteEditsLocally (moved to: sidepanel.js) */
+// Applying someone else's rename overwrites data on this device, so it now
+// waits for consent and the panel carries it out, next to the removals it
+// already applies on approval.
+
+function scheduleSnippetPush(reason) {
+  chrome.storage.local.set({ snippet_push_pending: true }).catch(() => {});
+  // Same name replaces the pending alarm, so a burst of edits collapses into one
+  // push 30 seconds after the last of them.
+  chrome.alarms.create(SNIPPET_PUSH_ALARM, { delayInMinutes: SNIPPET_PUSH_DELAY_MIN });
+  console.log(`[SnippetPush] Push scheduled (${reason})`);
+}
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: the user can switch this off */
+// Default on, and only absent-means-on: an explicit false is the only way off,
+// so a storage read that comes back empty never silently disables syncing.
+async function isBackgroundSyncEnabled() {
+  const stored = await chrome.storage.local.get('bmz_auto_sync_enabled');
+  return stored.bmz_auto_sync_enabled !== false;
+}
+
+async function runSnippetPush() {
+  /* [ZeroLabs] 2026-08-27 12:14 AM - edited: log every exit path */
+  // Nobody is watching this run, so every way out of it has to leave a trace.
+  console.log('[SnippetPush] Running');
+
+  if (!(await isBackgroundSyncEnabled())) {
+    console.log('[SnippetPush] Background sync is switched off');
+    await chrome.storage.local.set({ snippet_push_pending: false });
+    return;
+  }
+
+  const config = await loadSnippetPushConfig();
+  if (!config) {
+    await chrome.storage.local.set({ snippet_push_pending: false, snippet_push_attempts: 0 });
+    return;
+  }
+
+  if (!navigator.onLine) {
+    console.log('[SnippetPush] Offline, retrying after the next alarm');
+    chrome.alarms.create(SNIPPET_PUSH_ALARM, { delayInMinutes: SNIPPET_PUSH_DELAY_MIN });
+    return;
+  }
+
+  // Shared 60 second floor with the panel, both reading the same stored stamp
+  const sinceLastSync = Date.now() - config.lastSync;
+  if (config.lastSync && sinceLastSync < SNIPPET_MIN_SYNC_INTERVAL_MS) {
+    console.log(`[SnippetPush] Last push was ${Math.round(sinceLastSync / 1000)}s ago, deferring`);
+    chrome.alarms.create(SNIPPET_PUSH_ALARM, { delayInMinutes: SNIPPET_PUSH_DELAY_MIN });
+    return;
+  }
+
+  try {
+    const remote = await readRemoteSnippetBookmarks(config);
+    const remoteVersion = Number(remote?.version) || 0;
+
+    let tree = await chrome.bookmarks.getTree();
+    let snippetData = await snippetTreeToSnippetFormat(tree);
+
+    /* [ZeroLabs] 2026-08-27 11:36 AM - edited: four outcomes, not two */
+    // Every sync starts as a merge check. What separates a silent sync from a
+    // deferral is not the version number but what this device saw you do: a
+    // bookmark here that this device watched you create is your addition, one it
+    // never saw created came from elsewhere. The version is no longer a gate,
+    // which is what stops a stale version number from dead-ending the sync.
+    const localItems = collectSnippetItems(snippetData);
+    const remoteEntries = collectSnippetEntries(remote);
+
+    const events = await chrome.storage.local.get([
+      'snippet_local_created',
+      'snippet_local_deleted',
+      'snippet_local_edited'
+    ]);
+    const createdHere = new Set(events.snippet_local_created || []);
+    const deletedHere = new Set(events.snippet_local_deleted || []);
+
+    const toAddLocally = [];   // in the snippet, not here, and not deleted here
+    const removesFromSnippet = []; // in the snippet, not here, because you deleted it here
+    remoteEntries.forEach((entry, url) => {
+      if (localItems.has(url)) return;
+      if (deletedHere.has(url)) {
+        removesFromSnippet.push({ url, title: entry.title });
+      } else {
+        toAddLocally.push(entry);
+      }
+    });
+
+    const removesFromDevice = []; // here, not in the snippet, and not added here
+    let hasLocalAdditions = false;
+    localItems.forEach((title, url) => {
+      if (remoteEntries.has(url)) return;
+      if (createdHere.has(url)) {
+        hasLocalAdditions = true;
+      } else {
+        removesFromDevice.push({ url, title });
+      }
+    });
+
+    /* [ZeroLabs] 2026-08-27 2:02 PM - added: renames and moves, judged before the deferral */
+    // A rename or move keeps the URL, so it is invisible to the two loops above
+    // and has to be compared separately. Attribution decides what happens, and
+    // the two directions are deliberately not symmetric:
+    //
+    //   edited here     -> you made the change and want it to travel. Push it.
+    //   edited          -> the snippet wants to overwrite a name or location on
+    //     elsewhere         this device. That is a change to data you may have
+    //                       chosen, and nothing here can tell which is wanted,
+    //                       so it waits for you exactly as a deletion does.
+    //
+    // Compared by title and location rather than by checksum on purpose: a
+    // Chrome checksum can never equal a Firefox one, because the two name their
+    // root folders differently, so a checksum test would report a difference
+    // forever and the browsers would push at each other in a loop. Root KEYS
+    // (bookmark_bar, menu, other, mobile) and user folder names match on both
+    // sides, so this comparison is safe across browsers.
+    const editedHere = new Set(events.snippet_local_edited || []);
+    const localEntries = collectSnippetEntries(snippetData);
+    let hasLocalEdits = false;
+    const overwritesOnDevice = [];
+
+    localEntries.forEach((localEntry, url) => {
+      const remoteEntry = remoteEntries.get(url);
+      if (!remoteEntry) return; // Additions are handled by the loops above
+
+      const movedOrRenamed =
+        localEntry.title !== remoteEntry.title ||
+        localEntry.rootKey !== remoteEntry.rootKey ||
+        localEntry.segments.join('/') !== remoteEntry.segments.join('/');
+      if (!movedOrRenamed) return;
+
+      if (editedHere.has(url)) {
+        hasLocalEdits = true;
+      } else {
+        // rootKey and segments travel with it so the panel can place the
+        // bookmark if you approve, without re-deriving the path from a title.
+        overwritesOnDevice.push({
+          url,
+          title: localEntry.title,
+          remoteTitle: remoteEntry.title,
+          localPath: [localEntry.rootKey].concat(localEntry.segments).join('/'),
+          remotePath: [remoteEntry.rootKey].concat(remoteEntry.segments).join('/'),
+          remoteRootKey: remoteEntry.rootKey,
+          remoteSegments: remoteEntry.segments
+        });
+      }
+    });
+
+    /* [ZeroLabs] 2026-08-27 - edited: additions land BEFORE any deferral */
+    // This used to sit after the deferral check, which meant a pending deletion
+    // suppressed a perfectly safe addition - and worse, approving that deletion
+    // then pushed a local tree that had never received it, deleting it from the
+    // snippet. Local ABCDF against snippet ABCDE, approving the removal of F,
+    // pushed ABCD and destroyed E.
+    //
+    // Adding is never destructive, so it is never a reason to wait.
+    let addedLocally = 0;
+    if (toAddLocally.length > 0) {
+      addedLocally = await createSnippetItemsLocally(toAddLocally);
+      console.log(`[SnippetPush] Added ${addedLocally} item(s) from the snippet to this device`);
+      tree = await chrome.bookmarks.getTree();
+      snippetData = await snippetTreeToSnippetFormat(tree);
+    }
+
+    /* [ZeroLabs] 2026-08-27 - added: the safe additions, for the dialog to list */
+    // Additions never need consent and are already applied by this point, but a
+    // dialog appearing while bookmarks quietly arrive should account for them.
+    // Approve also pushes, so this device's own additions travel with it.
+    const entryPath = (e) => [e.rootKey].concat(e.segments).join('/');
+    const addedHereItems = toAddLocally.slice(0, 200).map(e => ({
+      url: e.url, title: e.title, path: entryPath(e)
+    }));
+    const pendingPushItems = [];
+    localEntries.forEach((entry, url) => {
+      if (!remoteEntries.has(url) && createdHere.has(url)) {
+        pendingPushItems.push({ url, title: entry.title, path: entryPath(entry) });
+      }
+    });
+
+    // Outcome 4: anything that removes or overwrites on either side waits.
+    if (removesFromSnippet.length > 0 || removesFromDevice.length > 0 || overwritesOnDevice.length > 0) {
+      await chrome.storage.local.set({
+        snippet_push_held: true,
+        snippet_push_held_items: removesFromSnippet.slice(0, 200),
+        snippet_pull_held_items: removesFromDevice.slice(0, 200),
+        snippet_overwrite_held_items: overwritesOnDevice.slice(0, 200),
+        snippet_added_here_items: addedHereItems,
+        snippet_pending_push_items: pendingPushItems.slice(0, 200),
+        snippet_push_pending: false,
+        snippet_push_attempts: 0
+      });
+      await setSnippetReconcileBadge(true);
+      console.warn('[SnippetPush] Deferred for consent', {
+        wouldRemoveFromSnippet: removesFromSnippet.length,
+        wouldRemoveFromDevice: removesFromDevice.length,
+        wouldOverwriteOnDevice: overwritesOnDevice.length
+      });
+      return;
+    }
+
+    // Outcome 2 and 3: push when this device has something the snippet lacks.
+    // Adopting an edit brings this side to the snippet, so it needs no push
+    // either; only changes made here do.
+    if (!hasLocalAdditions && addedLocally === 0 && !hasLocalEdits) {
+      await chrome.storage.local.set({
+        snippet_local_version: remoteVersion,
+        snippet_last_sync: Date.now(),
+        snippet_push_pending: false,
+        snippet_push_attempts: 0,
+        snippet_push_held: false,
+        snippet_push_held_items: [],
+        snippet_pull_held_items: [],
+        snippet_overwrite_held_items: []
+      });
+      await clearLocalBookmarkEvents();
+      await setSnippetReconcileBadge(false);
+      console.log('[SnippetPush] Already in sync, version recorded as', remoteVersion);
+      return;
+    }
+
+    const payload = {
+      ...snippetData,
+      version: remoteVersion + 1,
+      checksum: await snippetCalculateChecksum(snippetData),
+      lastModified: Date.now()
+    };
+
+    const response = await snippetFetchGitLab(
+      `https://gitlab.com/api/v4/snippets/${config.snippetId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${config.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          files: [{
+            action: 'update',
+            file_path: 'bookmarks.json',
+            content: JSON.stringify(payload, null, 2)
+          }]
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to update Snippet: ${response.status}`);
+    }
+
+    await chrome.storage.local.set({
+      snippet_local_version: remoteVersion + 1,
+      snippet_last_sync: Date.now(),
+      snippet_push_pending: false,
+      snippet_push_attempts: 0,
+      /* [ZeroLabs] 2026-08-27 2:26 AM - added: a clean push clears any hold */
+      snippet_push_held: false,
+      snippet_push_held_items: [],
+      snippet_pull_held_items: [],
+        snippet_overwrite_held_items: []
+    });
+    /* [ZeroLabs] 2026-08-27 11:36 AM - added: both sides agree, the records are spent */
+    await clearLocalBookmarkEvents();
+    await setSnippetReconcileBadge(false);
+    console.log('[SnippetPush] Pushed bookmarks.json at version', remoteVersion + 1);
+  } catch (error) {
+    // A dead token or a missing snippet fails identically every time, so retries
+    // are capped rather than left to hammer GitLab until the browser closes.
+    const { snippet_push_attempts = 0 } = await chrome.storage.local.get('snippet_push_attempts');
+    const attempts = snippet_push_attempts + 1;
+    await chrome.storage.local.set({ snippet_push_attempts: attempts });
+
+    console.error(`[SnippetPush] Attempt ${attempts} failed:`, error);
+
+    if (attempts < SNIPPET_MAX_PUSH_ATTEMPTS) {
+      chrome.alarms.create(SNIPPET_PUSH_ALARM, { delayInMinutes: SNIPPET_PUSH_DELAY_MIN });
+    } else {
+      // Give up until the next bookmark change, and say so where it can be seen
+      await setSnippetReconcileBadge(true);
+      await chrome.storage.local.set({ snippet_push_pending: false, snippet_push_attempts: 0 });
+    }
+  }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  /* [ZeroLabs] 2026-08-27 11:36 AM - edited: the poll runs the same reconcile */
+  // Both alarms end in the same place. The push alarm is your own change asking
+  // to go up; the poll is this device asking whether anything came in.
+  if (alarm.name === SNIPPET_PUSH_ALARM || alarm.name === SNIPPET_POLL_ALARM) {
+    runSnippetPush();
+  }
+});
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - added: keep the poll alarm alive */
+// Alarms survive a worker teardown but not an uninstall or a browser update, so
+// this is re-asserted on both startup events. Creating it under the same name
+// replaces it rather than stacking a second one.
+function ensureSnippetPollAlarm() {
+  chrome.alarms.create(SNIPPET_POLL_ALARM, {
+    periodInMinutes: SNIPPET_POLL_PERIOD_MIN,
+    delayInMinutes: SNIPPET_POLL_PERIOD_MIN
+  });
+}
+
+chrome.runtime.onInstalled.addListener(ensureSnippetPollAlarm);
+chrome.runtime.onStartup.addListener(ensureSnippetPollAlarm);
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - edited: keep the payload instead of discarding it */
+// Registered at the top level so a stopped worker is woken by the event itself.
+// onCreated hands over the new node; onRemoved hands over removeInfo.node, which
+// is the only moment the deleted bookmark's URL is still knowable.
+chrome.bookmarks.onCreated.addListener((id, bookmark) => {
+  recordLocalBookmarkEvent('created', bookmark);
+  scheduleSnippetPush('onCreated');
+});
+
+chrome.bookmarks.onRemoved.addListener((id, removeInfo) => {
+  recordLocalBookmarkEvent('deleted', removeInfo && removeInfo.node);
+  scheduleSnippetPush('onRemoved');
+});
+
+/* [ZeroLabs] 2026-08-27 1:47 PM - edited: an edit is attributable too */
+chrome.bookmarks.onChanged.addListener((id, changeInfo) => {
+  recordLocalBookmarkEdit(id, changeInfo && changeInfo.url);
+  scheduleSnippetPush('onChanged');
+});
+
+chrome.bookmarks.onMoved.addListener((id) => {
+  recordLocalBookmarkEdit(id);
+  scheduleSnippetPush('onMoved');
+});
+
+// A push left pending when the worker was torn down or the browser closed still
+// has to happen, and its alarm may have been consumed already.
+chrome.runtime.onStartup.addListener(async () => {
+  const { snippet_push_pending } = await chrome.storage.local.get('snippet_push_pending');
+  if (snippet_push_pending) {
+    chrome.alarms.create(SNIPPET_PUSH_ALARM, { delayInMinutes: SNIPPET_PUSH_DELAY_MIN });
+  }
+});

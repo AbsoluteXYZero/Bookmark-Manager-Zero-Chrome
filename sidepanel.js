@@ -40,6 +40,36 @@ async function fetchGitLab(url, options = {}, timeoutMs = GITLAB_TIMEOUT_MS) {
 // ============================================================================
 // FIRST-TIME SETUP CARD
 // ============================================================================
+/* [ZeroLabs] 2026-08-27 - added: what's-new card (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+// Chrome never had an announcement card at all - the v4.5 one was built in
+// Firefox and never ported. The storage key carries the DATE, so writing the
+// next announcement means changing the key with it and the card reappears for
+// everyone, including people who dismissed the last one. A fixed key would have
+// to be renamed by hand, and forgetting would leave the new copy invisible to
+// exactly the users who read the old one. A date also avoids a version number,
+// which differs between the extensions and the website anyway.
+const LATEST_CARD_KEY = 'bmz_latest_card_20260827';
+let hasSeenLatestCard = true;
+
+async function loadLatestCardFlag() {
+  try {
+    const result = await chrome.storage.local.get([LATEST_CARD_KEY]);
+    hasSeenLatestCard = result[LATEST_CARD_KEY] || false;
+  } catch (error) {
+    hasSeenLatestCard = false;
+  }
+}
+
+async function dismissLatestCard() {
+  hasSeenLatestCard = true;
+  try {
+    await chrome.storage.local.set({ [LATEST_CARD_KEY]: true });
+    renderBookmarks();
+  } catch (error) {
+    console.error('Error saving latest card flag:', error);
+  }
+}
+
 let hasSeenSetupCard = true; // Default to true, will be loaded from storage
 
 // Load setup card flag from storage
@@ -487,8 +517,7 @@ let snippetSyncInterval = null;
 let snippetLastSyncTime = 0;
 let snippetIsSyncing = false;
 let snippetLocalVersion = 0;
-let snippetPushDebounceTimer = null;
-let snippetMinSyncInterval = 60000; // Minimum 60 seconds between syncs to avoid abuse detection
+/* [ZeroLabs] 2026-08-27 1:05 PM - removed: snippetPushDebounceTimer, snippetMinSyncInterval (dead with markSnippetChanges) */
 let rotationPromptActive = false;
 let supabaseExpiredToastShown = false;
 
@@ -1647,9 +1676,61 @@ function buildQuickAccessMetaContent() {
 
 // Pinning marks the snippet dirty exactly like a bookmark edit does, so pins
 // ride the existing debounce instead of firing their own request.
+/* [ZeroLabs] 2026-08-27 1:05 PM - added: pins write their own file, nothing else (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+// Pinning changes bmz-meta.json and nothing else, so it has no business pushing
+// bookmarks.json alongside it. Sending the tree made a pin subject to the whole
+// sync question: it went through syncToSnippet, hit last night's version guard,
+// and a stale version silently dropped the pin. GitLab only rewrites the files
+// named in the request, so naming one file leaves the bookmarks untouched and
+// there is nothing left to guard against.
+async function pushQuickAccessMeta() {
+  if (!snippetId || !snippetToken) return;
+
+  // Never write pins for a snippet whose meta has not been read, or a snippet
+  // switch followed by a fast push would overwrite the new snippet's pins with
+  // the previous one's cache. Same rule updateBookmarksInSnippet follows.
+  if (!quickAccessMetaLoaded || quickAccessSnippetTag !== snippetId) {
+    await loadQuickAccessForSnippet(snippetId);
+  }
+  if (!quickAccessMetaLoaded || quickAccessSnippetTag !== snippetId) {
+    console.warn('[QuickAccess] Meta not loaded for this snippet; pin push skipped');
+    return;
+  }
+
+  const response = await fetchGitLab(`https://gitlab.com/api/v4/snippets/${snippetId}`, {
+    method: 'PUT',
+    headers: getSnippetHeaders(),
+    body: JSON.stringify({
+      files: [{
+        action: metaFileExists ? 'update' : 'create',
+        file_path: META_FILE,
+        content: buildQuickAccessMetaContent()
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update pins: ${response.status}`);
+  }
+
+  metaFileExists = true;
+  console.log('[QuickAccess] Pins pushed');
+}
+
+let quickAccessPushTimer = null;
+
 function markQuickAccessChanged() {
   if (!snippetId || !snippetToken) return;
-  markSnippetChanges();
+
+  // Short debounce so a run of pin changes collapses into one small write.
+  // Nothing here can destroy anything, so it does not need the 30s the tree push
+  // uses to batch edits.
+  clearTimeout(quickAccessPushTimer);
+  quickAccessPushTimer = setTimeout(() => {
+    pushQuickAccessMeta().catch(error => {
+      console.error('[QuickAccess] Pin push failed:', error);
+    });
+  }, 5000);
 }
 
 // Update bookmarks in snippet
@@ -1983,6 +2064,7 @@ async function openSnippetSyncDialog() {
 
   const dialog = document.createElement('div');
   dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0); max-height: 90vh; overflow-y: auto;';
+  dialog.className = 'bmz-dialog';
 
   const currentMode = await getTokenMode();
 
@@ -1990,21 +2072,41 @@ async function openSnippetSyncDialog() {
     const modeLabel = currentMode === 'supabase' ? '☁️ Supabase' : '💻 Local';
     const switchLabel = currentMode === 'supabase' ? 'Switch to Local' : 'Enable Supabase';
     dialog.innerHTML = `
-      <h2 style="margin: 0 0 16px 0; font-size: 20px;">GitLab Sync Settings</h2>
+      <!-- [ZeroLabs] 2026-08-27 12:34 PM - edited: centered heading -->
+      <h2 style="margin: 0 0 16px 0; font-size: 20px; text-align: center;">GitLab Sync Settings</h2>
       <div style="display: flex; flex-direction: column; gap: 12px;">
+        <!-- [ZeroLabs] 2026-08-27 12:20 PM - edited: one sync button instead of two directions -->
+        <!-- The old pair was misleading: cloud-to-device only opened a review
+             dialog, while device-to-cloud silently overwrote the snippet with no
+             confirmation at all. One button runs the same reconcile the worker
+             runs, and anything that would delete opens the diff dialog. -->
         ${snippetId ? `
-          <button id="syncFromSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #818cf8); color: var(--md-sys-color-on-primary, #fff); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-8 2V5h2v6h1.17L12 13.17 9.83 11H11zm-6 8v2h14v-2H5z"/></svg>
-            Sync from Cloud to Device
-          </button>
-          <button id="syncToSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-tertiary-container, #2a2a2a); color: var(--md-sys-color-on-tertiary-container, #d0bcff); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
-            Sync from Device to Cloud
-          </button>
+          <!-- [ZeroLabs] 2026-08-27 12:34 PM - edited: the header's tanuki, status inside the ring -->
+          <!-- Same two layers the header button uses: the GitLab tanuki as the
+               background and the sync arrows over it. Only the inner group spins,
+               so the status text sitting in the middle of the ring stays still. -->
+          <!-- [ZeroLabs] 2026-08-27 12:34 PM - edited: the header's tanuki, status inside the ring -->
+          <!-- Same two layers the header button uses: the black GitLab tanuki as
+               the background and the sync arrows over it, inside the circle that
+               contains them. Only the inner group spins, so the status text
+               sitting in the middle of the ring stays upright. -->
+          <div style="display: flex; justify-content: center; padding: 8px 0;">
+            <button id="manualSyncNow" title="Sync with your snippet" aria-label="Sync with your snippet" style="position: relative; width: 128px; height: 128px; max-width: 100%; border-radius: 50%; border: none; background: var(--md-sys-color-surface-container, #2a2a2a); box-shadow: var(--md-elevation-1); cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center;">
+              <!-- The loader rides the circle's edge, which leaves the tanuki
+                   and the label alone in the middle instead of fighting them for
+                   room. Spinning shows one coloured arc; settled shows the whole
+                   ring in the outcome colour. -->
+              <span id="manualSyncRing" style="position: absolute; inset: 0; border-radius: 50%; border: 4px solid transparent; box-sizing: border-box; pointer-events: none;"></span>
+              <svg width="92" height="92" viewBox="0 0 24 24" style="display: block;">
+                <path fill="#000000" d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>
+              </svg>
+              <span id="manualSyncStatus" style="position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">Syncing</span>
+            </button>
+          </div>
           <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 4px 0;">
         ` : ''}
         <button id="snippetOptionsToggle" aria-expanded="${snippetId ? 'false' : 'true'}" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <span>Snippet Options</span>
+          <span>Snippet Sync Options</span>
           <svg id="snippetOptionsChevron" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink:0;transition:transform 0.2s ease;transform:rotate(${snippetId ? '-90' : '0'}deg);"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"/></svg>
         </button>
         <div id="snippetOptionsPanel" style="display: ${snippetId ? 'none' : 'flex'}; flex-direction: column; gap: 12px;">
@@ -2015,12 +2117,37 @@ async function openSnippetSyncDialog() {
             <span style="font-size:13px;color:var(--md-sys-color-on-surface-variant,#aaa);">Token Storage: <strong style="color:var(--md-sys-color-on-surface,#e0e0e0);">${modeLabel}</strong></span>
             <button id="switchTokenMode" style="padding:6px 12px;border-radius:6px;border:none;background:var(--md-sys-color-secondary-container,#3a3a5c);color:var(--md-sys-color-on-secondary-container,#d0bcff);font-size:12px;cursor:pointer;">${switchLabel}</button>
           </div>
+          <!-- [ZeroLabs] 2026-08-27 11:36 AM - added: background auto-sync toggle -->
+          <div style="padding:8px 12px;background:var(--md-sys-color-surface-variant,#2a2a2a);border-radius:8px;">
+            <label style="display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;">
+              <span style="font-size:13px;color:var(--md-sys-color-on-surface,#e0e0e0);">Background auto-sync</span>
+              <input type="checkbox" id="autoSyncToggle" style="flex-shrink:0;width:16px;height:16px;cursor:pointer;">
+            </label>
+            <div style="font-size:12px;color:var(--md-sys-color-on-surface-variant,#aaa);margin-top:6px;">
+              Checks for changes every 5 minutes and syncs automatically when nothing would be removed.
+              Anything that would delete a bookmark will defer for consent.
+            </div>
+          </div>
           <button id="createNewSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
             Create New Snippet with Current Bookmarks
           </button>
           <button id="selectExistingSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-secondary-container, #2a2a2a); color: var(--md-sys-color-on-secondary-container, #d0bcff); cursor: pointer; font-size: 14px;">
             Select Existing Snippet
           </button>
+          ${snippetId ? `
+            <!-- [ZeroLabs] 2026-08-27 12:20 PM - added: forcing, always reachable -->
+            <!-- The sync button resolves everything it safely can, which means a
+                 divergence in renames or moves never surfaces a choice, and a
+                 wholesale recovery has no route. These stay available whatever
+                 the current difference happens to look like. -->
+            <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 4px 0;">
+            <button id="forceOverwriteSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
+              Overwrite Snippet with Local
+            </button>
+            <button id="forceOverwriteLocal" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
+              Overwrite Local with Snippet
+            </button>
+          ` : ''}
           <button id="disconnectSnippet" style="padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error-container, #3b1a1a); color: var(--md-sys-color-on-error-container, #f9dedc); cursor: pointer; font-size: 14px;">
             Disconnect & Remove Token
           </button>
@@ -2160,19 +2287,123 @@ async function openSnippetSyncDialog() {
   });
 
   if (snippetToken) {
-    const syncFromSnippetBtn = dialog.querySelector('#syncFromSnippet');
-    if (syncFromSnippetBtn) {
-      syncFromSnippetBtn.addEventListener('click', async () => {
-        modal.remove();
-        await syncFromSnippet();
+    /* [ZeroLabs] 2026-08-27 12:20 PM - edited: one button, runs the reconcile */
+    const manualSyncNowBtn = dialog.querySelector('#manualSyncNow');
+    if (manualSyncNowBtn) {
+      /* [ZeroLabs] 2026-08-27 12:34 PM - edited: spin the arrows, keep the label still */
+      // Statuses are single words because they sit inside the arrow ring, and
+      // that space allows one line. The detail goes to a toast instead.
+      const ring = dialog.querySelector('#manualSyncRing');
+      const status = dialog.querySelector('#manualSyncStatus');
+      let running = false;
+
+      /* [ZeroLabs] 2026-08-27 12:48 PM - edited: a ring loader instead of spinning arrows */
+      // Spinning draws one arc and rotates it; settling paints the whole ring in
+      // the outcome colour and stops. The label takes the same colour so the two
+      // always agree, green matching the header button's sync-success state.
+      const setSyncState = (colour, spinning) => {
+        if (status) status.style.color = colour;
+        if (!ring) return;
+        if (spinning) {
+          ring.style.borderColor = 'transparent';
+          ring.style.borderTopColor = colour;
+          ring.style.animation = 'spin 1s linear infinite';
+        } else {
+          ring.style.animation = '';
+          ring.style.borderColor = colour;
+        }
+      };
+
+      const runManualSync = async () => {
+        if (running) return;
+        running = true;
+        setSyncState('#ffffff', true);
+        if (status) status.textContent = 'Syncing';
+
+        try {
+          const outcome = await reconcileWithSnippet();
+
+          if (outcome.deferred) {
+            setSyncState('#ff9800', false);
+            if (status) status.textContent = 'Decide';
+            modal.remove();
+            /* [ZeroLabs] 2026-08-27 - edited: every deferral uses the consent dialog */
+            // Removals used to branch to the diff dialog here, which described the
+            // same deferral from the wrong end. Both kinds now go to the dialog
+            // that says what syncing would do and asks.
+            await showHeldPushDialog();
+            return;
+          }
+
+          setSyncState('#4caf50', false);
+          if (status) status.textContent = outcome.changed ? 'Synced' : 'In Sync';
+          /* [ZeroLabs] 2026-08-27 2:41 PM - edited: silent when nothing changed */
+          // The ring already reads "In Sync", so a toast saying the same is
+          // just a second notification for a non-event.
+          if (outcome.changed) {
+            showToast(outcome.addedLocally > 0
+              ? `Synced. ${outcome.addedLocally} added here, snippet updated.`
+              : 'Synced. Snippet updated.');
+          }
+        } catch (error) {
+          console.error('[ManualSync] Failed:', error);
+          setSyncState('#f44336', false);
+          if (status) status.textContent = 'Error';
+          showToast(`Sync failed: ${error.message}`, 'error');
+        } finally {
+          running = false;
+        }
+      };
+
+      manualSyncNowBtn.addEventListener('click', runManualSync);
+      // Opening the dialog is itself a request to sync, so it starts straight
+      // away rather than making you press the button you just navigated to.
+      runManualSync();
+    }
+
+    /* [ZeroLabs] 2026-08-27 12:20 PM - added: the two forced overwrites */
+    // Both name what is about to be lost before doing it. The snippet one reads
+    // the remote first purely so the count is real rather than a vague warning.
+    const forceOverwriteSnippetBtn = dialog.querySelector('#forceOverwriteSnippet');
+    if (forceOverwriteSnippetBtn) {
+      forceOverwriteSnippetBtn.addEventListener('click', async () => {
+        try {
+          const remoteData = await readBookmarksFromSnippet(snippetId);
+          const localTree = await chrome.bookmarks.getTree();
+          const remoteAsChrome = snippetFormatToChromeBookmarks(remoteData);
+          const diff = calculateBookmarkDiff(localTree[0], remoteAsChrome[0]);
+          const losing = diff.added.length;
+
+          const proceed = confirm(losing > 0
+            ? `Warning: the snippet will be replaced with this device's bookmarks.\n\n${losing} item(s) currently in the snippet are not on this device and will be lost, on every device using it.\n\nContinue?`
+            : 'The snippet will be replaced with this device\'s bookmarks. Nothing in the snippet is missing here, so nothing will be lost.\n\nContinue?');
+          if (!proceed) return;
+
+          modal.remove();
+          /* [ZeroLabs] 2026-08-27 2:41 PM - edited: one result, not the push's pair */
+          await syncToSnippet(true);
+          showToast('Snippet overwritten with local bookmarks.');
+        } catch (error) {
+          console.error('[ForceOverwrite] Snippet overwrite failed:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        }
       });
     }
 
-    const syncToSnippetBtn = dialog.querySelector('#syncToSnippet');
-    if (syncToSnippetBtn) {
-      syncToSnippetBtn.addEventListener('click', async () => {
-        modal.remove();
-        await syncToSnippet();
+    const forceOverwriteLocalBtn = dialog.querySelector('#forceOverwriteLocal');
+    if (forceOverwriteLocalBtn) {
+      forceOverwriteLocalBtn.addEventListener('click', async () => {
+        try {
+          const remoteData = await readBookmarksFromSnippet(snippetId);
+          modal.remove();
+          // applyRemoteChangesToChrome carries its own double confirmation and
+          // takes a pre-sync snapshot into the changelog, so it is not wrapped
+          // in another prompt here.
+          await applyRemoteChangesToChrome(remoteData);
+        } catch (error) {
+          console.error('[ForceOverwrite] Local overwrite failed:', error);
+          showToast(`Error: ${error.message}`, 'error');
+        }
       });
     }
 
@@ -2197,6 +2428,22 @@ async function openSnippetSyncDialog() {
       disconnectBtn.addEventListener('click', async () => {
         modal.remove();
         showGitLabDisconnectDialog();
+      });
+    }
+
+    /* [ZeroLabs] 2026-08-27 11:36 AM - added: bind the auto-sync toggle */
+    // Absent means on, so only an explicit false switches it off. Writing the
+    // value immediately means the worker sees it on its very next alarm.
+    const autoSyncToggle = dialog.querySelector('#autoSyncToggle');
+    if (autoSyncToggle) {
+      chrome.storage.local.get('bmz_auto_sync_enabled').then(stored => {
+        autoSyncToggle.checked = stored.bmz_auto_sync_enabled !== false;
+      });
+      autoSyncToggle.addEventListener('change', async () => {
+        await chrome.storage.local.set({ bmz_auto_sync_enabled: autoSyncToggle.checked });
+        showToast(autoSyncToggle.checked
+          ? 'Background auto-sync enabled'
+          : 'Background auto-sync disabled. Manual sync still works.');
       });
     }
 
@@ -2475,7 +2722,8 @@ async function showBackupBeforeReplaceDialog() {
 }
 
 // Show merge confirmation dialog
-async function showMergeConfirmationDialog(snippetId, type) {
+/* [ZeroLabs] 2026-08-26 11:29 PM - edited: accept counts for the totals line */
+async function showMergeConfirmationDialog(snippetId, type, counts = null) {
   return new Promise((resolve) => {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay';
@@ -2506,6 +2754,28 @@ async function showMergeConfirmationDialog(snippetId, type) {
     const actionText = type === 'new' ? 'create a new snippet' : 'use this existing snippet';
     const snippetText = type === 'new' ? 'new snippet' : 'selected snippet';
 
+    /* [ZeroLabs] 2026-08-26 11:29 PM - added: totals line before a destructive choice (see also: Bookmark-Manager-Zero-Website/js/sidebar-adapted.js) */
+    // Two of these buttons overwrite one side with the other and the dialog
+    // never said how much sat on each. Ported from the share window's totals
+    // sentence. The counts come from the read the caller has already done, so
+    // this costs no extra request. Values are integers, never user text.
+    let totalsLine = '';
+    if (counts && typeof counts.local === 'number' && typeof counts.remote === 'number') {
+      const noun = (n) => (n === 1 ? 'bookmark' : 'bookmarks');
+      let comparison;
+      if (counts.remote > counts.local) {
+        comparison = `The snippet has ${counts.remote - counts.local} more.`;
+      } else if (counts.local > counts.remote) {
+        comparison = `This device has ${counts.local - counts.remote} more.`;
+      } else {
+        comparison = 'Same total, but the contents differ.';
+      }
+      totalsLine = `
+      <p style="margin: -8px 0 16px 0; font-size: 0.9em; color: var(--md-sys-color-on-surface-variant, #aaa);">
+        The snippet has ${counts.remote} ${noun(counts.remote)}, this device has ${counts.local} ${noun(counts.local)}. ${comparison}
+      </p>`;
+    }
+
     dialog.innerHTML = `
       <h2 style="margin: 0 0 16px 0; color: var(--md-sys-color-primary, #818cf8);">
         📋 Local Bookmarks Detected
@@ -2513,6 +2783,7 @@ async function showMergeConfirmationDialog(snippetId, type) {
       <p style="margin-bottom: 16px;">
         You have bookmarks stored locally. How would you like to handle them?
       </p>
+      ${totalsLine}
       <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
         <button id="keepLocal" style="
           background: var(--md-sys-color-surface-variant, #2a2a2a);
@@ -2543,9 +2814,10 @@ async function showMergeConfirmationDialog(snippetId, type) {
           border-left: 4px solid var(--md-sys-color-primary, #818cf8);
           font-weight: 500;
         ">
+          <!-- [ZeroLabs] 2026-08-27 2:33 AM - edited: the name is honest again -->
           <div style="font-weight: 500;">Merge Bookmarks</div>
           <div style="font-size: 0.9em; opacity: 0.9; margin-top: 4px;">
-            Add your local bookmarks to the ${snippetText} and sync the combined result
+            Show what each side has that the other does not, then combine them so both end up with everything. Nothing is deleted.
           </div>
         </button>
 
@@ -2624,145 +2896,7 @@ async function showMergeConfirmationDialog(snippetId, type) {
   });
 }
 
-// Merge local bookmarks into existing snippet
-async function mergeLocalBookmarksIntoSnippet(snippetId) {
-  try {
-    // Get current snippet data
-    const snippetData = await readBookmarksFromSnippet(snippetId);
-
-    // Get local Chrome bookmarks
-    const localTree = await chrome.bookmarks.getTree();
-
-    // Convert Chrome bookmarks to snippet format
-    const localBookmarksInSnippetFormat = chromeBookmarksToSnippetFormat(localTree[0]);
-
-    // Merge local bookmarks into snippet data
-    const mergedTree = mergeBookmarksIntoTree(localBookmarksInSnippetFormat, snippetData);
-
-    // Update snippet with merged data
-    await updateBookmarksInSnippet(mergedTree, snippetData.version + 1);
-
-  } catch (error) {
-    console.error('[mergeLocalBookmarksIntoSnippet] Error:', error);
-    throw error;
-  }
-}
-
-// Replace remote snippet with local Chrome bookmarks
-async function replaceRemoteWithLocal(snippetId) {
-  try {
-    const localTree = await chrome.bookmarks.getTree();
-    const localInSnippetFormat = chromeBookmarksToSnippetFormat(localTree[0]);
-    await updateBookmarksInSnippet(localInSnippetFormat);
-  } catch (error) {
-    console.error('[replaceRemoteWithLocal] Error:', error);
-    throw error;
-  }
-}
-
-// Merge bookmarks from one tree into another tree
-// Preserves folder structure and merges into existing folders with same names
-function mergeBookmarksIntoTree(sourceTree, targetTree) {
-  try {
-    // Create a deep copy of the target tree
-    const mergedTree = JSON.parse(JSON.stringify(targetTree));
-
-    // Ensure target tree has roots
-    if (!mergedTree.roots) {
-      mergedTree.roots = {
-        bookmark_bar: { id: '1', title: 'Bookmarks Toolbar', type: 'folder', children: [] },
-        menu: { id: '2', title: 'Bookmarks Menu', type: 'folder', children: [] },
-        other: { id: '3', title: 'Other Bookmarks', type: 'folder', children: [] },
-        mobile: { id: '4', title: 'Mobile Bookmarks', type: 'folder', children: [] }
-      };
-    }
-
-    // Helper function to find folder by title in a root folder
-    const findFolderByTitle = (children, title) => {
-      if (!children) return null;
-      return children.find(child => child.type === 'folder' && child.title === title);
-    };
-
-    // Helper function to recursively regenerate IDs for all nodes in a subtree
-    const regenerateIds = (node) => {
-      node.id = `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      node.dateAdded = Date.now();
-      if (node.children) {
-        node.children.forEach(regenerateIds);
-      }
-      return node;
-    };
-
-    // Helper function to merge source folder into target folder
-    const mergeFolder = (sourceFolder, targetParentChildren) => {
-      const existingFolder = findFolderByTitle(targetParentChildren, sourceFolder.title);
-
-      if (existingFolder) {
-        // Folder exists, merge contents
-        if (sourceFolder.children) {
-          // Recursively merge each child
-          sourceFolder.children.forEach(child => {
-            if (child.type === 'folder') {
-              mergeFolder(child, existingFolder.children);
-            } else if (child.url) {
-              // Add bookmark if it doesn't already exist (by URL)
-              const bookmarkExists = existingFolder.children?.some(existingChild =>
-                existingChild.url === child.url
-              );
-              if (!bookmarkExists) {
-                if (!existingFolder.children) existingFolder.children = [];
-                existingFolder.children.push({
-                  ...child,
-                  id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
-                  dateAdded: Date.now()
-                });
-              }
-            }
-          });
-        }
-      } else {
-        // Folder doesn't exist, add entire folder structure with regenerated IDs
-        const newFolder = regenerateIds(JSON.parse(JSON.stringify(sourceFolder)));
-        targetParentChildren.push(newFolder);
-      }
-    };
-
-    // Merge source tree roots into target tree roots
-    if (sourceTree.roots) {
-      Object.keys(sourceTree.roots).forEach(rootKey => {
-        const sourceRoot = sourceTree.roots[rootKey];
-        const targetRoot = mergedTree.roots[rootKey];
-
-        if (sourceRoot && targetRoot && sourceRoot.children) {
-          if (!targetRoot.children) targetRoot.children = [];
-
-          sourceRoot.children.forEach(item => {
-            if (item.type === 'folder') {
-              mergeFolder(item, targetRoot.children);
-            } else if (item.url) {
-              // Add individual bookmarks, avoiding duplicates
-              const bookmarkExists = targetRoot.children.some(existingChild =>
-                existingChild.url === item.url
-              );
-              if (!bookmarkExists) {
-                targetRoot.children.push({
-                  ...item,
-                  id: `merged-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // New ID
-                  dateAdded: Date.now()
-                });
-              }
-            }
-          });
-        }
-      });
-    }
-
-    return mergedTree;
-  } catch (error) {
-    console.error('[mergeBookmarksIntoTree] Error:', error);
-    throw error;
-  }
-}
+/* [ZeroLabs] 2026-08-27 2:26 AM - removed: mergeLocalBookmarksIntoSnippet + mergeBookmarksIntoTree (replaced by: bringSidesTogether) */
 
 /* [ZeroLabs] 2026-06-20 11:01 AM - removed: orphaned mergeBidirectional (per-sync merge) */
 
@@ -2778,6 +2912,7 @@ async function handleSelectExistingSnippet() {
 
     const dialog = document.createElement('div');
     dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+    dialog.className = 'bmz-dialog';
 
     let snippetList = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Select a Snippet</h2>';
 
@@ -2828,20 +2963,46 @@ async function handleSelectExistingSnippet() {
           // that and the browser's internal-URL rewrites. Reading the snippet is
           // the only expensive part and both paths need it anyway.
           let alreadyInSync = false;
+          /* [ZeroLabs] 2026-08-26 11:29 PM - added: keep both totals for the dialog */
+          // Both trees are already in hand here for the diff, so counting them
+          // is free. Stays null if the read failed, and the dialog then renders
+          // exactly as it did before.
+          let syncCounts = null;
+          /* [ZeroLabs] 2026-08-27 12:14 AM - added: carry the remote version out of the try */
+          // Connecting to a snippet that already matches recorded no version at
+          // all, so the first background push compared against 0 and skipped.
+          let connectRemoteVersion = null;
+          /* [ZeroLabs] 2026-08-27 1:05 AM - added: keep the diff for Compare and Choose */
+          // The connect flow already computes both of these to decide whether to
+          // show this dialog at all, so reusing them costs no extra request.
+          let connectDiff = null;
+          let connectRemoteData = null;
           try {
             const remoteData = await readBookmarksFromSnippet(selectedSnippetId);
+            connectRemoteVersion = Number(remoteData?.version) || 0;
+            connectRemoteData = remoteData;
             const localTree = await chrome.bookmarks.getTree();
             const remoteTreeAsChromeFormat = snippetFormatToChromeBookmarks(remoteData);
             const diff = calculateBookmarkDiff(localTree[0], remoteTreeAsChromeFormat[0]);
+            connectDiff = diff;
             alreadyInSync = (diff.added.length + diff.removed.length +
                              diff.moved.length + diff.modified.length) === 0;
+            syncCounts = {
+              local: countBookmarks(localTree[0]),
+              remote: countBookmarks(remoteTreeAsChromeFormat[0])
+            };
           } catch (e) {
             // Comparison failed — fall through to show dialog as normal
           }
 
           if (alreadyInSync) {
             snippetId = selectedSnippetId;
-            await chrome.storage.local.set({ bmz_snippet_id: snippetId });
+            /* [ZeroLabs] 2026-08-27 12:14 AM - edited: record the version we matched */
+            snippetLocalVersion = connectRemoteVersion !== null ? connectRemoteVersion : snippetLocalVersion;
+            await chrome.storage.local.set({
+              bmz_snippet_id: snippetId,
+              snippet_local_version: snippetLocalVersion
+            });
             updateGitLabButtonIcon();
             startSnippetAutoSync();
             loadQuickAccessForSnippet(snippetId).catch(err => {
@@ -2852,20 +3013,35 @@ async function handleSelectExistingSnippet() {
           }
 
           // Show merge confirmation dialog
-          const mergeChoice = await showMergeConfirmationDialog(selectedSnippetId, 'existing');
+          /* [ZeroLabs] 2026-08-26 11:29 PM - edited: pass totals to the dialog */
+          const mergeChoice = await showMergeConfirmationDialog(selectedSnippetId, 'existing', syncCounts);
 
           if (mergeChoice === 'keep-local') {
             // User chose to cancel and keep local bookmarks
             showToast('Cancelled. Local bookmarks unchanged.');
             return;
           } else if (mergeChoice === 'merge') {
-            // Merge local bookmarks into selected snippet
-            showToast('Merging local bookmarks into snippet...');
+            /* [ZeroLabs] 2026-08-27 1:05 AM - edited: item-by-item instead of a blind merge (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+            // Was mergeLocalBookmarksIntoSnippet, a one-way union that pushed
+            // local into the snippet and left this device still missing whatever
+            // the snippet had. It also silently kept bookmarks deleted here, so
+            // they returned on the next pull. The same tickable list the sync
+            // diff uses settles each item instead, and both sides end up equal.
             snippetId = selectedSnippetId;
-            await chrome.storage.local.set({ bmz_snippet_id: snippetId });
-            await mergeLocalBookmarksIntoSnippet(selectedSnippetId);
+            snippetLocalVersion = connectRemoteVersion !== null ? connectRemoteVersion : snippetLocalVersion;
+            await chrome.storage.local.set({
+              bmz_snippet_id: snippetId,
+              snippet_local_version: snippetLocalVersion
+            });
             updateGitLabButtonIcon();
-            showToast('Merged and connected to snippet: ' + snippetId);
+
+            if (connectDiff && connectRemoteData) {
+              await showSyncDiffDialog(connectDiff, connectRemoteData);
+            } else {
+              // The comparison failed earlier, so there is nothing to show.
+              // Connect and let the next sync surface the difference.
+              showToast('Connected. Open GitLab sync to compare.', 'error');
+            }
           } else if (mergeChoice === 'replace-remote') {
             // Replace remote snippet with local bookmarks
             snippetId = selectedSnippetId;
@@ -2924,6 +3100,19 @@ async function syncFromSnippet(silent = false) {
     return;
   }
 
+  /* [ZeroLabs] 2026-08-27 3:14 AM - added: stand down while a held push is pending */
+  // A local deletion reaches the diff dialog as "only in the snippet", so both
+  // surfaces describe the same divergence from opposite ends and stacked on
+  // open, one offering to put the bookmarks back and the other asking to remove
+  // them. The held-push dialog knows a push was attempted and why, so it gets
+  // the divergence to itself. Checked before the toast, since announcing a
+  // check that is about to be abandoned just covers the dialog being read.
+  const heldState = await chrome.storage.local.get('snippet_push_held');
+  if (heldState.snippet_push_held) {
+    console.log('[SyncFromSnippet] Skipped: a held push is waiting for consent');
+    return;
+  }
+
   try {
     if (!silent) showToast('Checking for Snippet updates...');
 
@@ -2942,7 +3131,24 @@ async function syncFromSnippet(silent = false) {
     const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
 
     if (!hasChanges) {
+      /* [ZeroLabs] 2026-08-26 11:38 PM - added: clear reconcile flag once in sync */
+      // Whatever the snippet had that this device lacked is now here, so the
+      // badge has nothing left to point at. Record the version too, otherwise
+      // the next push would see a mismatch and block on an identical tree.
+      snippetLocalVersion = Number(remoteData?.version) || snippetLocalVersion;
+      await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
+      await setSnippetNeedsReconcile(false);
       if (!silent) showToast('No changes detected. Bookmarks are in sync.');
+      return;
+    }
+
+    /* [ZeroLabs] 2026-08-27 12:04 PM - added: automatic pulls stay quiet */
+    // The background worker reconciles on its own now, so a difference it is
+    // about to resolve must not raise a modal in the meantime. Adding a bookmark
+    // here used to open this dialog while the worker was already on its way to
+    // pushing it silently. Deferrals still surface, through the held dialog.
+    if (silent) {
+      console.log('[SyncFromSnippet] Differences found; leaving them to the background worker');
       return;
     }
 
@@ -2954,7 +3160,101 @@ async function syncFromSnippet(silent = false) {
   }
 }
 
-// Sync from Chrome bookmarks to Snippet (mirrors syncToSnippet)
+/* [ZeroLabs] 2026-08-26 11:38 PM - added: reconcile flag, toolbar badge, sync button state (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+// Raised when an automatic push is skipped because the snippet moved on without
+// this device. The badge rides the same toolbar button that opens the panel, so
+// the signal and the fix are one click apart, and it is the only signal there is
+// while the panel is closed. The sync button carries the same state for when the
+// panel is open. Both are best effort: an unpinned extension hides its badge
+// inside the browser's extensions menu.
+async function setSnippetNeedsReconcile(needs) {
+  try {
+    await chrome.storage.local.set({ snippet_needs_reconcile: !!needs });
+  } catch (error) {
+    console.error('[Snippet] Failed to store reconcile flag:', error);
+  }
+
+  try {
+    await chrome.action.setBadgeText({ text: needs ? '!' : '' });
+    if (needs) {
+      await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    }
+  } catch (error) {
+    // Action API unavailable here; the in-panel state below still applies
+  }
+
+  const manualSyncBtn = document.getElementById('manualSyncBtn');
+  if (manualSyncBtn) manualSyncBtn.classList.toggle('sync-attention', !!needs);
+
+  /* [ZeroLabs] 2026-08-27 - added: the card follows the same flag */
+  setSyncNoticeVisible(needs);
+}
+
+// Sync from Chrome bookmarks to Snippet
+/* [ZeroLabs] 2026-08-27 1:05 PM - removed: the version staleness guard (replaced by: reconcileWithSnippet, background.js) */
+// This is now purely "write the local tree to the snippet". Deciding whether
+// that is safe belongs to the reconcile, which classifies each difference from
+// what this device saw you create and delete rather than from a version number,
+// and every caller reaches here having already made that decision: the reconcile
+// after it clears, the held dialog after you consent, the overwrite button after
+// you confirm. The old guard compared versions and had no callers left that
+// could trip it.
+//
+// The remote is still read, for its version: the number written is remote + 1,
+// which is what keeps the counter monotonic for the other clients that do still
+// rely on it.
+/* [ZeroLabs] 2026-08-27 - added: the panel must clear these too (see also: background.js) */
+// This existed ONLY in the worker, so a push made from the panel left the
+// created/deleted records standing. A bookmark deleted here stayed in
+// snippet_local_deleted for ever, and the moment that URL appeared in the
+// snippet again it read as "you deleted this, syncing would remove it" - a
+// deferral over two bookmarks that were nothing but additions.
+/* [ZeroLabs] 2026-08-27 - added: record a deletion from the data we already hold */
+// Recording relied entirely on the background worker's onRemoved listener and its
+// `removeInfo.node`. For a folder that is ONE event for the whole subtree, and
+// whether the payload carries `children` is exactly the sort of thing that
+// differs between browsers - where it does not, none of the folder's URLs were
+// recorded as deleted, the next reconcile read them as additions sitting in the
+// snippet, and it faithfully put the entire folder back. Every sync returned it.
+//
+// The delete handlers already deep-copy the subtree for the changelog, so the
+// data is in hand. Recording it here does not depend on the event payload at all.
+// The worker's listener stays: it is what catches deletions made outside BMZ.
+async function recordLocalDeletion(node) {
+  if (!node) return;
+  const urls = [];
+  const walk = (n) => {
+    if (!n) return;
+    if (n.url) urls.push(n.url);
+    if (Array.isArray(n.children)) n.children.forEach(walk);
+  };
+  walk(node);
+  // A folder with no bookmarks in it records nothing, and correctly so:
+  // attribution is URL-based. Folders are handled by the toAdd filter instead.
+  if (urls.length === 0) return;
+
+  try {
+    const stored = await chrome.storage.local.get(['snippet_local_deleted', 'snippet_local_created']);
+    const deleted = new Set(stored.snippet_local_deleted || []);
+    const created = new Set(stored.snippet_local_created || []);
+    urls.forEach(url => { deleted.add(url); created.delete(url); });
+    await chrome.storage.local.set({
+      snippet_local_deleted: Array.from(deleted).slice(-2000),
+      snippet_local_created: Array.from(created)
+    });
+  } catch (error) {
+    console.error('[Sync] Could not record local deletion:', error);
+  }
+}
+
+async function clearLocalBookmarkEvents() {
+  await chrome.storage.local.set({
+    snippet_local_created: [],
+    snippet_local_deleted: [],
+    snippet_local_edited: []
+  });
+}
+
 async function syncToSnippet(silent = false) {
   if (!snippetId) {
     showToast('No Snippet connected', 'error');
@@ -2967,11 +3267,22 @@ async function syncToSnippet(silent = false) {
     const chromeTree = await chrome.bookmarks.getTree();
     const snippetData = await chromeBookmarksToSnippetFormat(chromeTree);
 
-    await updateBookmarksInSnippet(snippetData);
+    const remoteData = await readBookmarksFromSnippet(snippetId);
+    const remoteVersion = Number(remoteData?.version) || 0;
 
-    // Update local version tracking
-    snippetLocalVersion = (snippetData.version || 1);
-    await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
+    await updateBookmarksInSnippet(snippetData, remoteVersion + 1);
+
+    // Cache exactly the number that was written. The old code stored the
+    // converter's hardcoded 1, which never matched what it had just pushed.
+    snippetLocalVersion = remoteVersion + 1;
+    snippetLastSyncTime = Date.now();
+    await chrome.storage.local.set({
+      snippet_local_version: snippetLocalVersion,
+      snippet_last_sync: snippetLastSyncTime
+    });
+    await setSnippetNeedsReconcile(false);
+    /* [ZeroLabs] 2026-08-27 - added: both sides agree, the records are spent */
+    await clearLocalBookmarkEvents();
 
     if (!silent) showToast('Synced to Snippet successfully!');
   } catch (error) {
@@ -2988,10 +3299,21 @@ async function startSnippetAutoSync() {
 
   const syncInterval = 5 * 60 * 1000; // 5 minutes
 
+  /* [ZeroLabs] 2026-08-27 1:06 PM - added: the toggle governs this too */
+  // The setting says "background auto-sync", and the panel's own timer is part
+  // of that from the user's point of view. Switching it off used to stop the
+  // worker while this kept polling every five minutes whenever the panel was
+  // open, which is not what the toggle claims to do.
+  const autoSyncAllowed = async () => {
+    const stored = await chrome.storage.local.get('bmz_auto_sync_enabled');
+    return stored.bmz_auto_sync_enabled !== false;
+  };
+
   // Perform initial sync immediately
-  if (snippetId && snippetToken && navigator.onLine) {
+  if (snippetId && snippetToken && navigator.onLine && await autoSyncAllowed()) {
     try {
-      await syncFromSnippet();
+      /* [ZeroLabs] 2026-08-27 12:04 PM - edited: silent, the worker owns resolution */
+      await syncFromSnippet(true);
     } catch (error) {
       console.error('[Snippet AutoSync] Initial sync failed:', error);
     }
@@ -3002,12 +3324,18 @@ async function startSnippetAutoSync() {
     if (!snippetId || !snippetToken || !navigator.onLine) {
       return;
     }
+    // Checked every tick rather than once, so flipping the toggle takes effect
+    // without needing the panel reopened.
+    if (!(await autoSyncAllowed())) {
+      return;
+    }
 
     try {
       // Check and auto-rotate token if expiring within 30 days
       const rotatedToken = await supabase.checkAndRotateIfNeeded(snippetToken);
       snippetToken = rotatedToken;
-      await syncFromSnippet();
+      /* [ZeroLabs] 2026-08-27 12:04 PM - edited: silent, the worker owns resolution */
+      await syncFromSnippet(true);
     } catch (error) {
       console.error('[Snippet AutoSync] Scheduled sync failed:', error);
     }
@@ -3022,43 +3350,10 @@ function stopSnippetAutoSync() {
   }
 }
 
-// Debounced push sync to Snippet (triggered by local bookmark changes)
-// Waits 30 seconds after last change to batch multiple edits and avoid rate limiting
-// Respects 60-second minimum between consecutive syncs
-function markSnippetChanges() {
-  if (!snippetId || !snippetToken || !navigator.onLine) {
-    return;
-  }
-
-  if (snippetPushDebounceTimer) {
-    clearTimeout(snippetPushDebounceTimer);
-  }
-
-  snippetPushDebounceTimer = setTimeout(async () => {
-    const now = Date.now();
-    const timeSinceLastSync = now - snippetLastSyncTime;
-
-    if (timeSinceLastSync < snippetMinSyncInterval) {
-      const delayMs = snippetMinSyncInterval - timeSinceLastSync;
-      snippetPushDebounceTimer = setTimeout(markSnippetChanges, delayMs);
-      return;
-    }
-
-    try {
-      await syncToSnippet();
-    } catch (error) {
-      console.error('[SnippetPushSync] Failed to sync:', error);
-      // Retry after 5 seconds
-      setTimeout(() => {
-        if (snippetId && snippetToken && navigator.onLine) {
-          syncToSnippet().catch(err => {
-            console.error('[SnippetPushSync] Retry failed:', err);
-          });
-        }
-      }, 5000);
-    }
-  }, 30000); // Wait 30 seconds after last change to batch multiple edits
-}
+/* [ZeroLabs] 2026-08-27 1:05 PM - removed: markSnippetChanges (replaced by: background.js reconcile, pushQuickAccessMeta) */
+// The panel's debounced tree push. Bookmark changes moved to the service worker
+// so they sync with the panel closed, and pins now write bmz-meta.json directly,
+// which left this with no callers but its own retry.
 
 // Show GitLab disconnect dialog
 function updateGitLabButtonIcon() {
@@ -3093,6 +3388,7 @@ async function showGitLabDisconnectDialog() {
 
   const dialog = document.createElement('div');
   dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 400px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
+  dialog.className = 'bmz-dialog';
 
   dialog.innerHTML = `
     <h2 style="margin: 0 0 16px 0; font-size: 18px; display: flex; align-items: center; gap: 8px;">
@@ -3152,6 +3448,834 @@ async function showGitLabDisconnectDialog() {
 }
 
 // Calculate diff between local and remote bookmark trees
+/* [ZeroLabs] 2026-08-27 12:44 AM - added: shared folder title normalizer (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+// Normalize folder titles to handle Chrome vs Firefox naming differences.
+// Lifted out of calculateBookmarkDiff unchanged: the diff builds its paths with
+// this, so anything resolving one of those paths back to a real folder has to
+// use the identical function or the two will disagree on the root names.
+function normalizeBookmarkTitle(title) {
+  // Treat empty string and "Untitled" as equivalent (empty)
+  if (!title || title === 'Untitled' || title === 'Untitled Folder') {
+    return '';
+  }
+
+  const normalized = {
+    'Bookmarks Toolbar': 'Bookmarks bar',   // Firefox → Chrome
+    'Bookmarks bar': 'Bookmarks bar',        // Chrome → Chrome
+    'Other Bookmarks': 'Other bookmarks',    // Normalize to Chrome's lowercase
+    'Other bookmarks': 'Other bookmarks',    // Chrome → Chrome
+    'Mobile Bookmarks': 'Mobile Bookmarks',
+    'Bookmarks Menu': 'Bookmarks Menu'
+  };
+  return normalized[title] || title;
+}
+
+/* [ZeroLabs] 2026-08-27 12:44 AM - added: resolve a diff path to a local folder */
+// Walks the local tree segment by segment, creating folders that do not exist
+// yet, and returns the id of the last one. Root folders are matched but never
+// created: a path whose first segment names no local root is unresolvable and
+// returns null rather than inventing a folder at the top level.
+async function resolveOrCreateFolderPath(segments) {
+  if (!segments || segments.length === 0) return null;
+
+  const tree = await chrome.bookmarks.getTree();
+  const roots = (tree[0] && tree[0].children) || [];
+  const root = roots.find(r => normalizeBookmarkTitle(r.title || '') === segments[0]);
+  if (!root) {
+    console.warn('[AddFromSnippet] No local root matches path segment:', segments[0]);
+    return null;
+  }
+
+  let parentId = root.id;
+  for (let i = 1; i < segments.length; i++) {
+    const children = await chrome.bookmarks.getChildren(parentId);
+    let match = children.find(c => !c.url && normalizeBookmarkTitle(c.title || '') === segments[i]);
+    if (!match) {
+      match = await chrome.bookmarks.create({ parentId, title: segments[i] });
+    }
+    parentId = match.id;
+  }
+
+  return parentId;
+}
+
+/* [ZeroLabs] 2026-08-27 12:44 AM - added: add chosen snippet-only items to this device */
+// The third option between "snippet wins" and "this device wins", both of which
+// destroy one side. These items exist in the snippet and not here, so creating
+// them locally and pushing the result loses nothing on either side.
+//
+// Folders are created before bookmarks and shallower paths before deeper ones,
+// so a parent always exists by the time its contents are placed.
+/* [ZeroLabs] 2026-08-27 2:26 AM - added: confirm a push the worker refused to make */
+// The background worker will not remove anything from the snippet on its own,
+// so when a local deletion needs to travel it parks the push and raises the
+// badge. This is where it gets settled, since only the panel can ask.
+/* [ZeroLabs] 2026-08-27 2:20 PM - added: snippet items with their folders (mirrors background.js) */
+// The diff keys on url plus path, so a rename or move looks like a delete and an
+// add of two different things. Comparing entries instead makes "same bookmark,
+// different name or place" visible as what it is.
+function collectSnippetEntries(snippetData) {
+  const entries = new Map();
+  if (!snippetData || !snippetData.roots) return entries;
+
+  const walk = (node, rootKey, segments) => {
+    if (!node) return;
+    if (node.url) {
+      entries.set(node.url, { url: node.url, title: node.title || node.url, rootKey, segments });
+      return;
+    }
+    if (Array.isArray(node.children)) {
+      node.children.forEach(child => walk(
+        child,
+        rootKey,
+        child.url ? segments : segments.concat(child.title || child.name || 'Unnamed Folder')
+      ));
+    }
+  };
+
+  Object.keys(snippetData.roots).forEach(rootKey => {
+    const root = snippetData.roots[rootKey];
+    if (!root) return;
+    if (Array.isArray(root.children)) {
+      root.children.forEach(child => walk(
+        child,
+        rootKey,
+        child.url ? [] : [child.title || child.name || 'Unnamed Folder']
+      ));
+    }
+  });
+
+  return entries;
+}
+
+/* [ZeroLabs] 2026-08-27 2:02 PM - added: place a bookmark by snippet root key (moved from: background.js) */
+// The held items carry the snippet's own root key rather than a folder title,
+// because the two browsers name their roots differently and a title would not
+// survive the trip. Chrome has no menu root, so the snippet's menu folds into
+// Other Bookmarks under a folder of its own name, matching the converter.
+function chromeRootForSnippetKey(rootKey) {
+  switch (rootKey) {
+    case 'bookmark_bar': return { id: '1', prefix: [] };
+    case 'other': return { id: '2', prefix: [] };
+    case 'menu': return { id: '2', prefix: ['Bookmarks Menu'] };
+    case 'mobile': return { id: '3', prefix: [] };
+    default: return null;
+  }
+}
+
+async function resolveOrCreateFolderUnder(parentId, segments) {
+  let currentId = parentId;
+  for (const segment of segments) {
+    const children = await chrome.bookmarks.getChildren(currentId);
+    let match = children.find(child => !child.url && child.title === segment);
+    if (!match) {
+      match = await chrome.bookmarks.create({ parentId: currentId, title: segment });
+    }
+    currentId = match.id;
+  }
+  return currentId;
+}
+
+/* [ZeroLabs] 2026-08-27 11:36 AM - edited: covers removals in both directions */
+// A deferral has two possible shapes and they can occur together: bookmarks you
+// deleted here that the snippet still holds, and bookmarks the snippet no longer
+// holds that are still here because another device deleted them. Both resolve to
+// a removal, which is the whole reason the sync stopped.
+/* [ZeroLabs] 2026-08-27 - added: a deletion asks now, not whenever you next open BMZ */
+// Deleting defers for consent, and that consent used to wait for the 30s
+// background push and then sit as an amber card until BMZ was next opened - so
+// the deletion simply did not reach the snippet, possibly for days. This runs the
+// same reconcile in the foreground, so the modal appears while you are still
+// looking at what you deleted and the change can go straight out.
+//
+// Delayed past the 5s undo window: the modal must not land on top of the undo
+// toast, and undoing makes the whole question moot. The timer is shared, so
+// deleting several in a row asks once rather than once per bookmark.
+let localDeleteSyncTimer = null;
+function syncAfterLocalDeletion() {
+  clearTimeout(localDeleteSyncTimer);
+  localDeleteSyncTimer = setTimeout(async () => {
+    if (!snippetId || !snippetToken || !navigator.onLine) return;
+    try {
+      const outcome = await reconcileWithSnippet();
+      if (outcome && outcome.deferred) {
+        await window.showHeldPushDialog?.();
+      }
+    } catch (error) {
+      console.error('[Sync] Post-delete sync failed:', error);
+    }
+  }, 6000);
+}
+window.syncAfterLocalDeletion = syncAfterLocalDeletion;
+
+async function showHeldPushDialog() {
+  const stored = await chrome.storage.local.get([
+    'snippet_push_held',
+    'snippet_push_held_items',
+    'snippet_pull_held_items',
+    'snippet_overwrite_held_items',
+    'snippet_added_here_items',
+    'snippet_pending_push_items'
+  ]);
+  if (!stored.snippet_push_held) return;
+
+  const fromSnippet = stored.snippet_push_held_items || [];
+  const fromDevice = stored.snippet_pull_held_items || [];
+  /* [ZeroLabs] 2026-08-27 2:02 PM - added: renames and moves wait here too */
+  const overwrites = stored.snippet_overwrite_held_items || [];
+  if (fromSnippet.length === 0 && fromDevice.length === 0 && overwrites.length === 0) return;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 560px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+  dialog.className = 'bmz-dialog';
+
+  const renderList = (items) => {
+    let out = '';
+    items.slice(0, 50).forEach(item => {
+      out += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(244, 67, 54, 0.1); border-left: 3px solid #f44336; border-radius: 4px;">
+        <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+        <div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeHtml(item.url || '')}</div>
+      </div>`;
+    });
+    if (items.length > 50) {
+      out += `<div style="font-size: 12px; color: #aaa; padding: 8px;">...and ${items.length - 50} more</div>`;
+    }
+    return out;
+  };
+
+  /* [ZeroLabs] 2026-08-27 - added: account for the safe additions as well */
+  // Additions never need consent, so they are already applied by the time this
+  // opens - but bookmarks appearing while a modal asks about something else is
+  // unexplained unless the modal says so. Past tense, because it is done.
+  const addedHere = stored.snippet_added_here_items || [];
+  const pendingPush = stored.snippet_pending_push_items || [];
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  /* [ZeroLabs] 2026-08-27 - added: a count you cannot inspect is half an answer */
+  // These two are stated rather than asked about, so they are collapsed by
+  // default - but the bookmarks are nameable and the user should be able to see
+  // which ones. Same chevron behaviour as Snippet Sync Options.
+  let noteId = 0;
+  const collapsibleNote = (sentence, items, colour) => {
+    const id = `syncNote${noteId++}`;
+    const rows = items.slice(0, 50).map(item => `
+      <div style="padding: 4px 8px; font-size: 12px; color: #aaa;">
+        ${escapeHtml(item.title || item.url || 'Untitled')}
+        ${item.path ? `<span style="color: #777;"> — ${escapeHtml(item.path)}</span>` : ''}
+      </div>`).join('');
+    const more = items.length > 50
+      ? `<div style="padding: 4px 8px; font-size: 12px; color: #777;">...and ${items.length - 50} more</div>` : '';
+    return `
+      <div style="margin: 0 0 12px 0;">
+        <button type="button" id="${id}Toggle" aria-expanded="false" style="display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; background: none; border: none; color: ${colour}; font-size: 14px; text-align: left; cursor: pointer; font-family: inherit;">
+          <span>${sentence}</span>
+          <svg id="${id}Chevron" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0; margin-right: auto; transition: transform 0.2s ease; transform: rotate(-90deg);"><path d="M7.41,8.58L12,13.17L16.59,8.58L18,10L12,16L6,10L7.41,8.58Z"/></svg>
+        </button>
+        <div id="${id}List" style="display: none; margin-top: 6px; border-left: 2px solid ${colour}; padding-left: 6px;">${rows}${more}</div>
+      </div>`;
+  };
+
+  let body = '';
+  if (addedHere.length > 0) {
+    body += collapsibleNote(
+      `Already added ${plural(addedHere.length, 'bookmark', 'bookmarks')} to this device.`,
+      addedHere, '#4caf50');
+  }
+  // Approve pushes, so this device's own additions travel as part of it
+  if (pendingPush.length > 0) {
+    body += collapsibleNote(
+      `Add ${plural(pendingPush.length, 'bookmark', 'bookmarks')} from this device to your Snippet.`,
+      pendingPush, 'var(--md-sys-color-on-surface, #e0e0e0)');
+  }
+  if (fromSnippet.length > 0) {
+    body += `<p style="margin: 0 0 12px 0; font-size: 14px;">
+      Remove ${fromSnippet.length} bookmark${fromSnippet.length === 1 ? '' : 's'} from your snippet to match this device.
+    </p>
+    <div style="margin-bottom: 20px;">${renderList(fromSnippet)}</div>`;
+  }
+  if (fromDevice.length > 0) {
+    body += `<p style="margin: 0 0 12px 0; font-size: 14px;">
+      Remove ${fromDevice.length} bookmark${fromDevice.length === 1 ? '' : 's'} from this device to match the snippet.
+    </p>
+    <div style="margin-bottom: 20px;">${renderList(fromDevice)}</div>`;
+  }
+
+  /* [ZeroLabs] 2026-08-27 2:02 PM - added: the rename and move section */
+  // Shown with both versions, because the choice is between two names rather
+  // than between keeping and losing something.
+  if (overwrites.length > 0) {
+    body += `<p style="margin: 0 0 12px 0; font-size: 14px;">
+      Rename or move ${overwrites.length} bookmark${overwrites.length === 1 ? '' : 's'} on this device to match the snippet.
+    </p>`;
+    let list = '';
+    overwrites.slice(0, 50).forEach(item => {
+      const renamed = item.title !== item.remoteTitle;
+      const relocated = item.localPath !== item.remotePath;
+      list += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; border-radius: 4px;">
+        <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+        ${renamed ? `<div style="font-size: 12px; color: #aaa;">Name: ${escapeHtml(item.title || '')} → ${escapeHtml(item.remoteTitle || '')}</div>` : ''}
+        ${relocated ? `<div style="font-size: 12px; color: #aaa;">Folder: ${escapeHtml(item.localPath || '')} → ${escapeHtml(item.remotePath || '')}</div>` : ''}
+        <div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeHtml(item.url || '')}</div>
+      </div>`;
+    });
+    if (overwrites.length > 50) {
+      list += `<div style="font-size: 12px; color: #aaa; padding: 8px;">...and ${overwrites.length - 50} more</div>`;
+    }
+    body += `<div style="margin-bottom: 20px;">${list}</div>`;
+  }
+
+  dialog.innerHTML = `
+    <!-- [ZeroLabs] 2026-08-27 11:36 AM - edited: centered heading -->
+    <h2 style="margin: 0 0 12px 0; font-size: 18px; color: #ff9800; text-align: center;">Sync changes to review</h2>
+    <p style="margin: 0 0 16px 0; font-size: 14px;">
+      Syncing would:
+    </p>
+    ${body}
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <button id="heldPushConfirm" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: #f59e0b; color: #1a1a1a; cursor: pointer; font-size: 14px; font-weight: 600;">
+        Approve
+      </button>
+      <button id="heldPushLater" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+        Cancel
+      </button>
+    </div>
+  `;
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  /* [ZeroLabs] 2026-08-27 - added: expand the collapsed notes */
+  dialog.querySelectorAll('[id$="Toggle"]').forEach(toggle => {
+    const base = toggle.id.replace(/Toggle$/, '');
+    const list = dialog.querySelector(`#${base}List`);
+    const chevron = dialog.querySelector(`#${base}Chevron`);
+    if (!list) return;
+    toggle.addEventListener('click', () => {
+      const open = list.style.display !== 'none';
+      list.style.display = open ? 'none' : 'block';
+      toggle.setAttribute('aria-expanded', String(!open));
+      if (chevron) chevron.style.transform = open ? 'rotate(-90deg)' : 'rotate(0deg)';
+    });
+  });
+
+  const clearHold = () => chrome.storage.local.set({
+    snippet_push_held: false,
+    snippet_push_held_items: [],
+    snippet_pull_held_items: [],
+    snippet_overwrite_held_items: []
+  });
+
+  dialog.querySelector('#heldPushConfirm').addEventListener('click', async () => {
+    modal.remove();
+    await clearHold();
+
+    /* [ZeroLabs] 2026-08-27 11:36 AM - added: apply the device-side removals too */
+    // Deleting these locally is what makes the push carry the other device's
+    // deletion. Logged to the changelog so they stay undoable like any delete.
+    /* [ZeroLabs] 2026-08-28 - added: collect the folders these leave behind */
+    const vacated = new Set();
+
+    if (fromDevice.length > 0) {
+      for (const item of fromDevice) {
+        try {
+          const matches = await chrome.bookmarks.search({ url: item.url });
+          for (const node of matches) {
+            const fullData = JSON.parse(JSON.stringify(node));
+            if (node.parentId) vacated.add(node.parentId);
+            await chrome.bookmarks.remove(node.id);
+            await addChangelogEntry('delete', 'bookmark', node.title || 'Untitled', node.url || null, { fullData });
+          }
+        } catch (error) {
+          console.warn('[SnippetPush] Could not remove locally:', item.url, error.message);
+        }
+      }
+      await loadBookmarks();
+      renderBookmarks();
+    }
+
+    /* [ZeroLabs] 2026-08-27 2:02 PM - added: apply the approved renames and moves */
+    // Moved here from the worker: this overwrites data on the device, so it only
+    // ever runs with consent, next to the removals approved above.
+    if (overwrites.length > 0) {
+      for (const item of overwrites) {
+        try {
+          const matches = await chrome.bookmarks.search({ url: item.url });
+          const node = matches && matches[0];
+          if (!node) continue;
+
+          /* [ZeroLabs] 2026-08-27 - added: log approved renames and moves */
+          // A rename made in chrome.bookmarksZ's own edit dialog writes an 'update' entry and
+          // is undoable from the changelog. One arriving through sync changed the
+          // bookmark just as much and left no trace at all, so it could not be
+          // reviewed afterwards or undone. Same vocabulary as the edit dialog.
+          const oldTitle = node.title;
+          if (item.remoteTitle && node.title !== item.remoteTitle) {
+            await chrome.bookmarks.update(node.id, { title: item.remoteTitle });
+            await addChangelogEntry('update', 'bookmark', item.remoteTitle, item.url || null, {
+              oldTitle,
+              newTitle: item.remoteTitle
+            });
+          }
+
+          if (item.localPath !== item.remotePath && Array.isArray(item.remoteSegments)) {
+            const root = chromeRootForSnippetKey(item.remoteRootKey);
+            if (root) {
+              const parentId = await resolveOrCreateFolderUnder(
+                root.id, root.prefix.concat(item.remoteSegments));
+              // An approved move empties a folder just as a removal does
+              if (node.parentId && node.parentId !== parentId) vacated.add(node.parentId);
+              await chrome.bookmarks.move(node.id, { parentId });
+              await addChangelogEntry('move', 'bookmark', item.remoteTitle || oldTitle, item.url || null, {
+                fromFolder: item.localPath,
+                toFolder: item.remotePath
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('[SnippetPush] Could not apply change to:', item.url, error.message);
+        }
+      }
+      await loadBookmarks();
+      renderBookmarks();
+    }
+
+    /* [ZeroLabs] 2026-08-28 - added: run the prune once everything has moved */
+    // Deferred to here rather than done inline, because a folder emptied by a
+    // removal can be refilled by a move later in the same resolution.
+    if (vacated.size > 0) {
+      for (const parentId of vacated) {
+        await pruneEmptyFolderChain(parentId);
+      }
+      await loadBookmarks();
+      renderBookmarks();
+    }
+
+    await syncToSnippet(true);
+    await setSnippetNeedsReconcile(false);
+    /* [ZeroLabs] 2026-08-27 2:41 PM - edited: one result, not the push's pair */
+    showToast('Sync approved and applied.');
+  });
+  dialog.querySelector('#heldPushLater').addEventListener('click', () => modal.remove());
+}
+
+/* [ZeroLabs] 2026-08-27 - added: reachable from the notice card */
+// The card is rendered at module level, and in Firefox this function lives
+// inside setupEventListeners, so a direct call from the card would be a
+// ReferenceError - the same scope trap that broke the v4.5 announcement
+// card's button in v4.6. Exposed here so both browsers call it the same way.
+window.showHeldPushDialog = showHeldPushDialog;
+
+/* [ZeroLabs] 2026-08-28 - added: folders left empty by an approved removal */
+// A folder deleted on another device arrives here as the removal of the
+// bookmarks that were inside it. The snippet has no record of the folder itself:
+// collectSnippetEntries is keyed by URL, and folders survive only as path
+// segments on the bookmarks they hold. So the bookmarks went and the folder
+// stayed behind, empty, on every device that did not do the deleting.
+//
+// Only folders emptied BY the operation that calls this are pruned, and only
+// while they are strictly empty. An empty folder made here on purpose is never
+// touched - the snippet never knew about it, so a sync has nothing to say about
+// it. For the same reason a folder still holding an empty subfolder survives:
+// that subfolder is local-only content, and taking it out with its parent would
+// destroy something the snippet never carried.
+async function pruneEmptyFolderChain(startId) {
+  const rootFolderIds = ['0', '1', '2', '3'];
+  let id = startId;
+
+  // The chain is walked upward, so a bad parentId must not spin forever
+  for (let guard = 0; id && guard < 50; guard++) {
+    if (rootFolderIds.includes(id)) return;
+
+    let node;
+    try {
+      [node] = await chrome.bookmarks.get(id);
+    } catch (error) {
+      return; // Already gone
+    }
+    if (!node || node.url) return;
+    // A folder sitting directly under the true root IS a root container
+    if (!node.parentId || node.parentId === '0') return;
+
+    const children = await chrome.bookmarks.getChildren(id);
+    if (children.length > 0) return;
+
+    const fullData = JSON.parse(JSON.stringify(node));
+    // Safe as a plain remove rather than removeTree: it has just been proven empty
+    await chrome.bookmarks.remove(id);
+    await addChangelogEntry('delete', 'folder', node.title || 'Unnamed Folder', null, { fullData });
+
+    id = node.parentId;
+  }
+}
+
+/* [ZeroLabs] 2026-08-27 12:20 PM - added: the panel's copy of the worker's reconcile */
+// Same four outcomes and the same classification the background uses, so a
+// manual sync and an automatic one can never disagree about what is safe. The
+// difference is only what happens on a deferral: the background asks for
+// consent, while this returns the diff so the caller can offer every resolution.
+async function reconcileWithSnippet() {
+  const remoteData = await readBookmarksFromSnippet(snippetId);
+  const localTree = await chrome.bookmarks.getTree();
+  const remoteAsChrome = snippetFormatToChromeBookmarks(remoteData);
+  const diff = calculateBookmarkDiff(localTree[0], remoteAsChrome[0]);
+
+  const hasChanges = diff.added.length + diff.removed.length +
+                     diff.moved.length + diff.modified.length > 0;
+
+  if (!hasChanges) {
+    snippetLocalVersion = Number(remoteData?.version) || snippetLocalVersion;
+    await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
+    await setSnippetNeedsReconcile(false);
+    return { changed: false, deferred: false, addedLocally: 0, pushed: false };
+  }
+
+  const events = await chrome.storage.local.get([
+    'snippet_local_created',
+    'snippet_local_deleted',
+    'snippet_local_edited'
+  ]);
+  const createdHere = new Set(events.snippet_local_created || []);
+  const deletedHere = new Set(events.snippet_local_deleted || []);
+
+  /* [ZeroLabs] 2026-08-27 1:32 PM - added: pair renames and moves before judging removals (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+  // calculateBookmarkDiff keys on `bookmark:<url>:<path>` and path includes the
+  // bookmark's own title, so renaming or moving one changes its key and the same
+  // bookmark appears in BOTH added and removed, as though it were deleted here
+  // and created there. Left alone that defers and offers to delete the bookmark
+  // you just renamed, and would re-create the old title as a duplicate.
+  //
+  // A URL on both lists is therefore an edit, not an add and not a delete.
+  // Neither is destructive, so neither defers; the push carries the local
+  // version, which is the same "local wins" the worker applies.
+  const addedUrls = new Set(diff.added.filter(item => item.url).map(item => item.url));
+  const removedUrls = new Set(diff.removed.filter(item => item.url).map(item => item.url));
+
+  // In the snippet and not here because you deleted it here: syncing removes it
+  // from the snippet. Here and not in the snippet without this device having
+  // seen it created: it came from elsewhere, so syncing removes it from here.
+  const removesFromSnippet = diff.added.filter(item =>
+    item.url && deletedHere.has(item.url) && !removedUrls.has(item.url));
+  const removesFromDevice = diff.removed.filter(item =>
+    item.url && !createdHere.has(item.url) && !addedUrls.has(item.url));
+
+  // Renamed and moved bookmarks are already here under their local title, so
+  // creating the snippet's copy would duplicate them.
+  /* [ZeroLabs] 2026-08-27 - edited: folders are not exempt from attribution */
+  // This used to keep every folder unconditionally, because `!item.url` is true
+  // for one and folders carry no URL to attribute. So a folder deleted here and
+  // still in the snippet was recreated locally on every reconcile, and the push
+  // that followed sent it straight back up - the deletion undid itself, for ever.
+  //
+  // Attribution is URL-based, so a folder inherits it from its contents: create
+  // one only when a bookmark is actually going into it. An empty folder made on
+  // another device therefore does not travel, which is the same limitation that
+  // already applies to renaming and moving one.
+  const wanted = (item) => item.url
+    && !deletedHere.has(item.url) && !removedUrls.has(item.url);
+  const toAdd = diff.added.filter(item => item.url
+    ? wanted(item)
+    : diff.added.some(other => other.path && item.path
+        && other.path.startsWith(item.path + '/') && wanted(other)));
+
+  /* [ZeroLabs] 2026-08-27 - edited: removals use the consent dialog, like everywhere else */
+  // This used to hand the raw diff back, and the caller showed the diff dialog:
+  // "2 item(s) only in the snippet", with a Merge button. That is the same fact
+  // told backwards. A bookmark you deleted here that the snippet still holds is
+  // not something you are missing - it is your deletion waiting to travel, and
+  // Merge would have put it straight back. The worker and the Website both use
+  // the consent dialog for this; the panel was the odd one out.
+  if (removesFromSnippet.length > 0 || removesFromDevice.length > 0) {
+    // Safe additions still land - they are never what the deferral is about.
+    await bringSidesTogether(toAdd, true, false);
+
+    const strip = (items) => items
+      .filter(item => item.url)
+      .map(item => ({ url: item.url, title: item.title, path: item.path }))
+      .slice(0, 200);
+
+    await chrome.storage.local.set({
+      snippet_push_held: true,
+      snippet_push_held_items: strip(removesFromSnippet),
+      snippet_pull_held_items: strip(removesFromDevice),
+      snippet_overwrite_held_items: [],
+      /* [ZeroLabs] 2026-08-27 - added: report the safe additions too */
+      snippet_added_here_items: toAdd.filter(i => i.url)
+        .map(i => ({ url: i.url, title: i.title, path: i.path })).slice(0, 200),
+      snippet_pending_push_items: diff.removed
+        .filter(item => item.url && createdHere.has(item.url))
+        .map(i => ({ url: i.url, title: i.title, path: i.path })).slice(0, 200)
+    });
+    await setSnippetNeedsReconcile(true);
+    return { changed: true, deferred: true, consent: true, diff, remoteData };
+  }
+
+  /* [ZeroLabs] 2026-08-27 2:20 PM - added: renames and moves, same rule as the worker */
+  // Without this the panel knew only about creates and deletes, so a rename made
+  // elsewhere fell through to "nothing to add" and the push below sent this
+  // device's old title back over it. Manual syncing quietly reverted the other
+  // device's rename.
+  const editedHere = new Set(events.snippet_local_edited || []);
+  const localEntries = collectSnippetEntries(await chromeBookmarksToSnippetFormat(localTree));
+  const remoteEntries = collectSnippetEntries(remoteData);
+  const overwritesOnDevice = [];
+
+  localEntries.forEach((localEntry, url) => {
+    const remoteEntry = remoteEntries.get(url);
+    if (!remoteEntry) return;
+
+    const movedOrRenamed =
+      localEntry.title !== remoteEntry.title ||
+      localEntry.rootKey !== remoteEntry.rootKey ||
+      localEntry.segments.join('/') !== remoteEntry.segments.join('/');
+    if (!movedOrRenamed) return;
+
+    // Edited here means you meant it, so the push below carries it. Edited
+    // elsewhere would overwrite a name on this device, which waits for consent.
+    if (!editedHere.has(url)) {
+      overwritesOnDevice.push({
+        url,
+        title: localEntry.title,
+        remoteTitle: remoteEntry.title,
+        localPath: [localEntry.rootKey].concat(localEntry.segments).join('/'),
+        remotePath: [remoteEntry.rootKey].concat(remoteEntry.segments).join('/'),
+        remoteRootKey: remoteEntry.rootKey,
+        remoteSegments: remoteEntry.segments
+      });
+    }
+  });
+
+  if (overwritesOnDevice.length > 0) {
+    // The diff dialog cannot express "take on their rename", so this uses the
+    // consent dialog, the same one the background raises.
+    await chrome.storage.local.set({
+      snippet_push_held: true,
+      snippet_push_held_items: [],
+      snippet_pull_held_items: [],
+      snippet_overwrite_held_items: overwritesOnDevice.slice(0, 200),
+      /* [ZeroLabs] 2026-08-27 - added: report the safe additions too */
+      snippet_added_here_items: toAdd.filter(i => i.url)
+        .map(i => ({ url: i.url, title: i.title, path: i.path })).slice(0, 200),
+      snippet_pending_push_items: diff.removed
+        .filter(item => item.url && createdHere.has(item.url))
+        .map(i => ({ url: i.url, title: i.title, path: i.path })).slice(0, 200)
+    });
+    /* [ZeroLabs] 2026-08-27 - added: additions must not wait on a rename */
+    // Without this, approving the rename pushed a tree that had never received
+    // the snippet's new bookmarks, deleting them from the snippet. Created but
+    // deliberately not pushed - the rename is still unresolved.
+    await bringSidesTogether(toAdd, true, false);
+
+    await setSnippetNeedsReconcile(true);
+    return { changed: true, deferred: true, consent: true, diff, remoteData };
+  }
+
+  await bringSidesTogether(toAdd, true);
+
+  return {
+    changed: true,
+    deferred: false,
+    addedLocally: toAdd.length,
+    pushed: true
+  };
+}
+
+/* [ZeroLabs] 2026-08-27 2:44 AM - added: report what a merge could not place */
+// Nothing is lost when an item cannot be placed: it stays in the snippet and
+// this device simply does not have it yet. The dialog says so, because the
+// alternative reads as data loss.
+function showUnplaceableItemsDialog(skippedItems, createdCount) {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10001; display: flex; align-items: center; justify-content: center;';
+
+  const dialog = document.createElement('div');
+  dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 560px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+  dialog.className = 'bmz-dialog';
+
+  let list = '';
+  skippedItems.forEach(({ item, reason }) => {
+    list += `<div style="padding: 8px; margin-bottom: 8px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; border-radius: 4px;">
+      <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+      <div style="font-size: 12px; color: #aaa;">${escapeHtml(item.path || '')}</div>
+      ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeHtml(item.url)}</div>` : ''}
+      <div style="font-size: 12px; color: #ff9800; margin-top: 6px;">${escapeHtml(reason)}</div>
+    </div>`;
+  });
+
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 12px 0; font-size: 18px; color: #ff9800;">${skippedItems.length} item(s) could not be added</h2>
+    <p style="margin: 0 0 16px 0; font-size: 14px;">
+      ${createdCount > 0 ? `${createdCount} item(s) were added and synced. ` : ''}These could not be placed on this device.
+      They are still in the snippet and on your other devices, so nothing has been lost.
+    </p>
+    <div style="margin-bottom: 20px;">${list}</div>
+    <!-- [ZeroLabs] 2026-08-27 2:44 AM - added: place them by hand instead of just reporting -->
+    <label style="display: block; font-size: 13px; color: var(--md-sys-color-on-surface-variant, #aaa); margin-bottom: 6px;">
+      Save them to this folder instead:
+    </label>
+    <select id="unplaceableFolder" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--md-sys-color-outline, #444); background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0); font-size: 14px; margin-bottom: 12px;"></select>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <button id="unplaceableSave" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #90caf9); color: var(--md-sys-color-on-primary, #000); cursor: pointer; font-size: 14px; font-weight: 500;">
+        Save them there and sync
+      </button>
+      <button id="unplaceableClose" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface-variant, #aaa); cursor: pointer; font-size: 14px;">
+        Leave them in the snippet only
+      </button>
+    </div>
+  `;
+
+  modal.appendChild(dialog);
+  document.body.appendChild(modal);
+
+  const folderSelect = dialog.querySelector('#unplaceableFolder');
+  populateFolderDropdown(folderSelect, false);
+  // "Root" is not a real parent in Chrome's bookmark tree, so it is not offered
+  const rootOption = folderSelect.querySelector('option[value=""]');
+  if (rootOption) rootOption.remove();
+
+  dialog.querySelector('#unplaceableSave').addEventListener('click', async () => {
+    const parentId = folderSelect.value;
+    if (!parentId) {
+      showToast('Choose a folder first', 'error');
+      return;
+    }
+
+    modal.remove();
+    showToast(`Saving ${skippedItems.length} item(s)...`);
+
+    // Flat into the chosen folder. Their original structure is what could not be
+    // reproduced here, so recreating a path is exactly what is not possible.
+    const stillSkipped = [];
+    let placed = 0;
+    for (const { item } of skippedItems) {
+      try {
+        await chrome.bookmarks.create(item.type === 'folder'
+          ? { parentId, title: item.title || 'Untitled' }
+          : { parentId, title: item.title || item.url, url: item.url });
+        placed++;
+      } catch (error) {
+        stillSkipped.push({ item, reason: error.message || 'The browser refused to create it.' });
+      }
+    }
+
+    await loadBookmarks();
+    renderBookmarks();
+    await syncToSnippet(true);
+
+    if (stillSkipped.length > 0) {
+      showUnplaceableItemsDialog(stillSkipped, placed);
+    } else {
+      showToast(`Saved ${placed} item(s) and synced.`);
+    }
+  });
+
+  dialog.querySelector('#unplaceableClose').addEventListener('click', () => modal.remove());
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+/* [ZeroLabs] 2026-08-27 2:26 AM - edited: additive only, no selection, no deletion */
+/* [ZeroLabs] 2026-08-27 - edited: allow create-without-push */
+// A deferral needs the safe additions applied locally but must NOT push,
+// because pushing while a removal is unresolved would put back the very
+// bookmark the other side deleted.
+async function bringSidesTogether(items, silent = false, push = true) {
+  const toAdd = items || [];
+
+  try {
+    /* [ZeroLabs] 2026-08-27 2:41 PM - edited: only the outermost caller speaks */
+    // This runs inside reconcileWithSnippet, which reports the outcome itself.
+    // Every layer toasting produced five notifications for one sync.
+    if (!silent) {
+      /* [ZeroLabs] 2026-08-27 2:41 PM - edited: only the outermost caller speaks */
+      // This runs inside reconcileWithSnippet, which reports the outcome itself.
+      // Every layer toasting produced five notifications for one sync.
+      if (!silent) {
+        showToast(toAdd.length > 0
+          ? `Adding ${toAdd.length} item(s) to this device...`
+          : 'Syncing...');
+      }
+    }
+
+    const depth = (path) => (path || '').split('/').length;
+    const ordered = [...toAdd].sort((a, b) => {
+      const aIsFolder = a.type === 'folder' ? 0 : 1;
+      const bIsFolder = b.type === 'folder' ? 0 : 1;
+      if (aIsFolder !== bIsFolder) return aIsFolder - bIsFolder;
+      return depth(a.path) - depth(b.path);
+    });
+
+    let created = 0;
+    /* [ZeroLabs] 2026-08-27 2:44 AM - edited: record why each skip happened */
+    // A count in a toast told the user something went wrong and nothing they
+    // could act on. Each failure now carries the item and the reason.
+    const skippedItems = [];
+
+    for (const item of ordered) {
+      // A diff path ends with the item's own title, so its parent is everything
+      // before the last segment.
+      const segments = (item.path || '').split('/');
+      if (segments.length < 2) {
+        skippedItems.push({ item, reason: 'The snippet lists it outside any folder, so there is nowhere to put it.' });
+        continue;
+      }
+
+      try {
+        if (item.type === 'folder') {
+          const folderId = await resolveOrCreateFolderPath(segments);
+          if (folderId) {
+            created++;
+          } else {
+            skippedItems.push({ item, reason: `This device has no top-level folder called "${segments[0]}".` });
+          }
+          continue;
+        }
+
+        const parentId = await resolveOrCreateFolderPath(segments.slice(0, -1));
+        if (!parentId) {
+          skippedItems.push({ item, reason: `This device has no top-level folder called "${segments[0]}".` });
+          continue;
+        }
+
+        await chrome.bookmarks.create({
+          parentId,
+          title: item.title || item.url,
+          url: item.url
+        });
+        created++;
+      } catch (itemError) {
+        // Chrome rejects some URLs outright (javascript:, malformed schemes),
+        // and one bad entry must not take the rest of the merge with it.
+        skippedItems.push({ item, reason: itemError.message || 'The browser refused to create it.' });
+      }
+    }
+
+    await loadBookmarks();
+    renderBookmarks();
+
+    // Push the combined result. Silent: the inner push has no business
+    // announcing itself when a caller above is already reporting the outcome.
+    if (push) await syncToSnippet(true);
+
+    /* [ZeroLabs] 2026-08-27 2:44 AM - edited: name what could not be placed */
+    // The unplaceable dialog is shown even when silent, because it is a problem
+    // the user has to act on rather than a progress message.
+    if (skippedItems.length > 0) {
+      showUnplaceableItemsDialog(skippedItems, created);
+    } else if (!silent) {
+      showToast(created > 0
+        ? `Added ${created} item(s) and synced.`
+        : 'Snippet updated.');
+    }
+  } catch (error) {
+    console.error('[AddFromSnippet] Failed:', error);
+    showToast(`Error: ${error.message}`, 'error');
+  }
+}
+
 function calculateBookmarkDiff(localTree, remoteTree) {
   const diff = {
     added: [],
@@ -3166,23 +4290,10 @@ function calculateBookmarkDiff(localTree, remoteTree) {
 
   const rootFolderIds = ['0', '1', '2', '3'];
 
-  // Normalize folder titles to handle Chrome vs Firefox naming differences
-  const normalizeTitle = (title) => {
-    // Treat empty string and "Untitled" as equivalent (empty)
-    if (!title || title === 'Untitled' || title === 'Untitled Folder') {
-      return '';
-    }
-
-    const normalized = {
-      'Bookmarks Toolbar': 'Bookmarks bar',   // Firefox → Chrome
-      'Bookmarks bar': 'Bookmarks bar',        // Chrome → Chrome
-      'Other Bookmarks': 'Other bookmarks',    // Normalize to Chrome's lowercase
-      'Other bookmarks': 'Other bookmarks',    // Chrome → Chrome
-      'Mobile Bookmarks': 'Mobile Bookmarks',
-      'Bookmarks Menu': 'Bookmarks Menu'
-    };
-    return normalized[title] || title;
-  };
+  /* [ZeroLabs] 2026-08-27 12:44 AM - edited: use the shared normalizer */
+  // Moved to module scope so the folder path resolver can match a diff path
+  // against the real local tree using exactly the same rules the diff used.
+  const normalizeTitle = normalizeBookmarkTitle;
 
   /* [ZeroLabs] 2026-08-17 4:15 PM - added: match browser-rewritten internal URLs (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
   // BMZ stores and transmits every URL verbatim, but chrome.bookmarks.create
@@ -3538,6 +4649,8 @@ async function applyRemoteChangesToChrome(remoteSnippetData, skipSnapshot = fals
         // Update local version tracking
         snippetLocalVersion = remoteSnippetData.version || 1;
         await chrome.storage.local.set({ snippet_local_version: snippetLocalVersion });
+        /* [ZeroLabs] 2026-08-26 11:38 PM - added: clear reconcile flag after applying remote */
+        await setSnippetNeedsReconcile(false);
 
         showToast('Bookmarks synced successfully!');
         resolve(true);
@@ -3568,8 +4681,27 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
 
   const dialog = document.createElement('div');
   dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 80%; overflow-y: auto; color: var(--md-sys-color-on-surface, #e0e0e0);';
+  dialog.className = 'bmz-dialog';
 
   const hasChanges = diff.added.length + diff.removed.length + diff.moved.length + diff.modified.length > 0;
+
+  /* [ZeroLabs] 2026-08-27 12:44 AM - added: label items this device deleted */
+  // A snippet-only bookmark is usually one another device added, but it can also
+  // be one deleted here whose deletion has not reached the snippet yet. Those
+  // deserve opposite answers and look identical in a list, so the changelog is
+  // consulted. It only proves the positive case: deletions made in Chrome's own
+  // bookmark manager never reach the changelog, so an absent entry says nothing.
+  const deletedHereByUrl = new Map();
+  try {
+    const changelogEntries = await getChangelogEntries();
+    changelogEntries.forEach(entry => {
+      if (entry.type === 'delete' && entry.url && !deletedHereByUrl.has(entry.url)) {
+        deletedHereByUrl.set(entry.url, new Date(entry.timestamp).toLocaleDateString());
+      }
+    });
+  } catch (error) {
+    console.error('[SyncDiff] Could not read changelog for deletion hints:', error);
+  }
 
   let content = '<h2 style="margin: 0 0 16px 0; font-size: 20px;">Snippet Sync Changes</h2>';
 
@@ -3579,32 +4711,52 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
     // Summary
     content += '<div style="margin-bottom: 20px; padding: 16px; background: var(--md-sys-color-surface-variant, #2a2a2a); border-radius: 8px;">';
     content += '<h3 style="margin: 0 0 12px 0; font-size: 16px;">Summary</h3>';
-    if (diff.added.length > 0) content += `<div style="margin-bottom: 4px; color: #4caf50;">✓ ${diff.added.length} item(s) to add</div>`;
-    if (diff.removed.length > 0) content += `<div style="margin-bottom: 4px; color: #f44336;">✗ ${diff.removed.length} item(s) to remove</div>`;
-    if (diff.moved.length > 0) content += `<div style="margin-bottom: 4px; color: #ff9800;">➜ ${diff.moved.length} item(s) to move</div>`;
-    if (diff.modified.length > 0) content += `<div style="color: #2196f3;">✎ ${diff.modified.length} item(s) to modify</div>`;
+    /* [ZeroLabs] 2026-08-27 3:02 AM - edited: say where each side's items are, not "remove" */
+    // Both of these end up on both sides after a merge. Calling one "to remove"
+    // in red read as a threat to bookmarks that were never in danger.
+    if (diff.added.length > 0) content += `<div style="margin-bottom: 4px; color: #4caf50;">${diff.added.length} item(s) only in the snippet</div>`;
+    if (diff.removed.length > 0) content += `<div style="margin-bottom: 4px; color: #90caf9;">${diff.removed.length} item(s) only on this device</div>`;
+    if (diff.moved.length > 0) content += `<div style="margin-bottom: 4px; color: #ff9800;">${diff.moved.length} item(s) to move</div>`;
+    if (diff.modified.length > 0) content += `<div style="color: #2196f3;">${diff.modified.length} item(s) to modify</div>`;
     content += '</div>';
 
     // Detailed changes
     if (diff.added.length > 0) {
-      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #4caf50;">Added</h3>';
+      /* [ZeroLabs] 2026-08-27 12:44 AM - edited: tickable list with deletion history */
+      // These are the only items that can be brought over without destroying
+      // anything, so they get checkboxes and their own action. Titles are
+      // escaped here because they now sit alongside form controls; the other
+      // sections still interpolate raw and should be given the same treatment.
+      /* [ZeroLabs] 2026-08-27 2:26 AM - edited: plain list, no per-item selection */
+      // The checkboxes were solving a problem nobody had. Bringing the two sides
+      // together takes everything, so the list is here to be read, not operated.
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #4caf50;">From Snippet</h3>';
       diff.added.forEach(item => {
+        const deletedOn = item.url ? deletedHereByUrl.get(item.url) : null;
         content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(76, 175, 80, 0.1); border-left: 3px solid #4caf50; border-radius: 4px;">
-          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
-          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
-          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${item.url}</div>` : ''}
+          <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+          <div style="font-size: 12px; color: #aaa;">${escapeHtml(item.path || '')}</div>
+          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeHtml(item.url)}</div>` : ''}
+          ${deletedOn ? `<div style="font-size: 11px; color: #ff9800; margin-top: 4px;">You deleted this here on ${escapeHtml(deletedOn)}. Bringing both sides together puts it back.</div>` : ''}
         </div>`;
       });
       content += '</div>';
     }
 
     if (diff.removed.length > 0) {
-      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #f44336;">Removed</h3>';
+      /* [ZeroLabs] 2026-08-27 2:26 AM - edited: plain list again, no local deletion */
+      // Briefly had checkboxes that deleted local bookmarks. That was never
+      // asked for and put real bookmarks one untick away from being destroyed.
+      // These items are simply kept and pushed up.
+      /* [ZeroLabs] 2026-08-27 2:33 AM - edited: blue, not red */
+      // These are kept and sent up to the snippet. Red made it look like they
+      // were about to be deleted, which is the opposite of what happens.
+      content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #90caf9;">From Local</h3>';
       diff.removed.forEach(item => {
-        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(244, 67, 54, 0.1); border-left: 3px solid #f44336; border-radius: 4px;">
-          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
-          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
-          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${item.url}</div>` : ''}
+        content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(144, 202, 249, 0.1); border-left: 3px solid #90caf9; border-radius: 4px;">
+          <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+          <div style="font-size: 12px; color: #aaa;">${escapeHtml(item.path || '')}</div>
+          ${item.url ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">${escapeHtml(item.url)}</div>` : ''}
         </div>`;
       });
       content += '</div>';
@@ -3612,11 +4764,15 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
 
     if (diff.moved.length > 0) {
       content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #ff9800;">Moved</h3>';
+      /* [ZeroLabs] 2026-08-27 1:06 PM - edited: escape bookmark text (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+      // Titles and paths come from the user's own bookmarks and go straight into
+      // innerHTML. Firefox escaped these already; Chrome did not, so a bookmark
+      // whose title contains markup rendered as markup and broke the dialog.
       diff.moved.forEach(item => {
         content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(255, 152, 0, 0.1); border-left: 3px solid #ff9800; border-radius: 4px;">
-          <div style="font-weight: 500;">${item.title || 'Untitled'}</div>
-          <div style="font-size: 12px; color: #aaa;">From: ${item.from}</div>
-          <div style="font-size: 12px; color: #aaa;">To: ${item.to}</div>
+          <div style="font-weight: 500;">${escapeHtml(item.title || 'Untitled')}</div>
+          <div style="font-size: 12px; color: #aaa;">From: ${escapeHtml(item.from || '')}</div>
+          <div style="font-size: 12px; color: #aaa;">To: ${escapeHtml(item.to || '')}</div>
         </div>`;
       });
       content += '</div>';
@@ -3626,9 +4782,9 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
       content += '<div style="margin-bottom: 20px;"><h3 style="margin: 0 0 12px 0; font-size: 16px; color: #2196f3;">Modified</h3>';
       diff.modified.forEach(item => {
         content += `<div style="padding: 8px; margin-bottom: 4px; background: rgba(33, 150, 243, 0.1); border-left: 3px solid #2196f3; border-radius: 4px;">
-          <div style="font-weight: 500;">${item.oldTitle || 'Untitled'} → ${item.newTitle || 'Untitled'}</div>
-          <div style="font-size: 12px; color: #aaa;">${item.path}</div>
-          ${item.oldUrl !== item.newUrl ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">URL: ${item.oldUrl} → ${item.newUrl}</div>` : ''}
+          <div style="font-weight: 500;">${escapeHtml(item.oldTitle || 'Untitled')} → ${escapeHtml(item.newTitle || 'Untitled')}</div>
+          <div style="font-size: 12px; color: #aaa;">${escapeHtml(item.path || '')}</div>
+          ${item.oldUrl !== item.newUrl ? `<div style="font-size: 11px; color: #888; margin-top: 4px;">URL: ${escapeHtml(item.oldUrl || '')} → ${escapeHtml(item.newUrl || '')}</div>` : ''}
         </div>`;
       });
       content += '</div>';
@@ -3638,12 +4794,17 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
   content += `
     <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
       ${hasChanges ? `
+        <!-- [ZeroLabs] 2026-08-27 2:26 AM - edited: one safe action, then the two overwrites -->
+        <!-- [ZeroLabs] 2026-08-27 3:02 AM - edited: captions cut, buttons match the section labels -->
+        <button id="bringSidesTogether" style="width: 100%; padding: 12px; border-radius: 8px; border: none; background: #4caf50; color: #05230a; cursor: pointer; font-size: 14px; font-weight: 500;">
+          Merge
+        </button>
         <div style="display: flex; gap: 12px;">
           <button id="pushLocalToRemote" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-primary, #90caf9); color: var(--md-sys-color-on-primary, #000); cursor: pointer; font-size: 14px;">
-            Push Local to Remote
+            Overwrite Snippet with Local
           </button>
           <button id="applyRemoteChanges" style="flex: 1; padding: 12px; border-radius: 8px; border: none; background: var(--md-sys-color-error, #f44336); color: var(--md-sys-color-on-error, #fff); cursor: pointer; font-size: 14px;">
-            Pull Remote to Local
+            Overwrite Local with Snippet
           </button>
         </div>
       ` : ''}
@@ -3657,12 +4818,28 @@ async function showSyncDiffDialog(diff, remoteSnippetData) {
   modal.appendChild(dialog);
   document.body.appendChild(modal);
 
+  /* [ZeroLabs] 2026-08-27 12:44 AM - added: add-ticked handler */
+  /* [ZeroLabs] 2026-08-27 2:26 AM - edited: one button, takes everything */
+  const bringTogetherBtn = dialog.querySelector('#bringSidesTogether');
+  if (bringTogetherBtn) {
+    bringTogetherBtn.addEventListener('click', async () => {
+      modal.remove();
+      /* [ZeroLabs] 2026-08-27 2:41 PM - added: this dialog has no ring to show progress */
+      showToast('Merging...');
+      await bringSidesTogether(diff.added);
+    });
+  }
+
   /* [ZeroLabs] 2026-06-20 11:01 AM - removed: per-sync merge button handler */
   const pushBtn = dialog.querySelector('#pushLocalToRemote');
   if (pushBtn) {
     pushBtn.addEventListener('click', async () => {
       modal.remove();
-      await syncToSnippet();
+      /* [ZeroLabs] 2026-08-27 2:41 PM - edited: one result, not the push's pair */
+      // The user is looking at the diff and choosing to overwrite, so the
+      // outcome is worth one line and the intermediate steps are not.
+      await syncToSnippet(true);
+      showToast('Snippet overwritten with local bookmarks.');
     });
   }
 
@@ -4212,6 +5389,12 @@ let selectedItems = new Set(); // IDs of selected bookmarks/folders
 let activeOperations = new Set(); // Set of active operation IDs
 let operationDetails = new Map(); // Map of operation ID to details
 
+/* [ZeroLabs] 2026-08-28 - added: the forced rescan is an operation like any other */
+// It used to write scanProgress.textContent directly, so it was invisible to
+// this system and raced with it. Named here so the id cannot drift between the
+// set and clear calls.
+const RESCAN_ALL_OP = 'rescan-all';
+
 // Centralized function to set scanning status
 function setScanningStatus(operationId, message) {
   activeOperations.add(operationId);
@@ -4377,10 +5560,61 @@ async function saveFolderScanTimestamp(folderId) {
   }
 }
 
-// Check if folder needs scanning (never scanned OR >7 days old)
+/* [ZeroLabs] 2026-08-28 - added: a timestamp is not proof that results exist */
+// The tree is the right place to look. restoreCachedBookmarkStatuses() hydrates
+// every node from linkStatusCache/safetyStatusCache at load, so by the time a
+// folder is expanded any surviving cached status is already sitting on its
+// nodes. If not one bookmark in the folder carries a status, there is genuinely
+// nothing cached and nothing to show.
+//
+// A folder holding no bookmarks at all returns true: there is nothing to scan
+// either way, and answering false would rescan empty folders on every expansion.
+function folderHasCachedStatuses(folderId) {
+  const folder = findFolderById(bookmarkTree, folderId);
+  if (!folder) return false;
+
+  let sawBookmark = false;
+  let sawStatus = false;
+
+  const walk = (nodes) => {
+    if (!Array.isArray(nodes) || sawStatus) return;
+    for (const node of nodes) {
+      if (node.url) {
+        sawBookmark = true;
+        // 'unknown' is what a failed or unavailable check writes, so it is not a result
+        /* [ZeroLabs] 2026-08-28 - fixed: 'unknown' safetyStatus counted as a result */
+        // linkStatus excluded 'unknown' but safetyStatus was only tested for
+        // truthiness. clearCache() sets BOTH to the string 'unknown', which is
+        // truthy - so a cleared folder still looked cached, shouldScanFolder
+        // skipped it, and re-expanding after Clear Cache scanned nothing.
+        if ((node.linkStatus && node.linkStatus !== 'unknown') ||
+            (node.safetyStatus && node.safetyStatus !== 'unknown')) {
+          sawStatus = true;
+          return;
+        }
+      }
+      if (node.children) {
+        walk(node.children);
+        if (sawStatus) return;
+      }
+    }
+  };
+  walk(folder.children);
+
+  return !sawBookmark || sawStatus;
+}
+
+// Check if folder needs scanning (never scanned OR >7 days old OR nothing cached)
 function shouldScanFolder(folderId) {
   const lastScan = folderScanTimestamps[folderId];
   if (!lastScan) return true; // Never scanned
+
+  /* [ZeroLabs] 2026-08-28 - added: skip only when results are actually there */
+  // This used to trust the timestamp alone, so a folder whose statuses had gone -
+  // cache cleared, entries expired, or a timestamp recorded by a scan that never
+  // produced anything - was skipped regardless and stayed blank until the seven
+  // days ran out, with no way to prompt it short of waiting the week out.
+  if (!folderHasCachedStatuses(folderId)) return true;
 
   const now = Date.now();
   const elapsed = now - lastScan;
@@ -4395,10 +5629,12 @@ async function syncBackgroundScanStatus() {
     if (status.isScanning) {
       console.log(`[Background Scan] Syncing UI - ${status.scanned}/${status.total}`);
 
-      // Update progress text
-      if (scanProgress) {
-        scanProgress.textContent = `Scanning: ${status.scanned}/${status.total}`;
-      }
+      /* [ZeroLabs] 2026-08-28 - edited: register it instead of writing the bar */
+      // Adopting an already-running background scan wrote straight to the bar,
+      // so the operation existed on screen but not in activeOperations - the
+      // next clearScanningStatus from anything else reset the bar to Ready while
+      // the scan carried on. Same id the scanStarted/scanProgress handlers use.
+      setScanningStatus('background-scan', `Scanning: ${status.scanned}/${status.total}`);
 
       /* [ZeroLabs] 2026-06-20 12:21 AM - edited: route button via updateScanControls */
       backgroundScanActive = true;
@@ -4583,6 +5819,7 @@ async function init() {
   loadCheckingSettings();
   loadScanConcurrency();
   await loadSetupCardFlag();
+  await loadLatestCardFlag();
   /* [ZeroLabs] 2026-08-17 4:15 PM - added: load quick access and recent state */
   await loadQuickAccess();
   await loadRecentOpens();
@@ -4594,7 +5831,8 @@ async function init() {
   await loadAutoClearSetting();
   await supabase.loadSession();
   await loadSnippetToken();
-  const snippetIdResult = await chrome.storage.local.get(['bmz_snippet_id', 'snippet_local_version', 'snippet_last_sync']);
+  /* [ZeroLabs] 2026-08-26 11:38 PM - edited: restore the reconcile flag on load */
+  const snippetIdResult = await chrome.storage.local.get(['bmz_snippet_id', 'snippet_local_version', 'snippet_last_sync', 'snippet_needs_reconcile']);
   if (snippetIdResult.bmz_snippet_id) {
     snippetId = snippetIdResult.bmz_snippet_id;
   }
@@ -4604,6 +5842,15 @@ async function init() {
   if (snippetIdResult.snippet_last_sync) {
     snippetLastSyncTime = snippetIdResult.snippet_last_sync;
   }
+  // A push skipped while the panel was shut has to show up when it opens
+  if (snippetIdResult.snippet_needs_reconcile) {
+    await setSnippetNeedsReconcile(true);
+  }
+  /* [ZeroLabs] 2026-08-27 - edited: the notice card replaces the modal on open */
+  // This opened the consent dialog every time the panel was opened with a
+  // deferral outstanding. One surface per divergence: the card explains it and
+  // the dialog now opens only when asked for, from the card or the sync button.
+  // setSnippetNeedsReconcile above already put the card up.
 
   updateGitLabButtonIcon();
   if (snippetToken && snippetId) {
@@ -5026,6 +6273,25 @@ function applyGuiScale() {
 }
 
 // Load checking settings from localStorage
+/* [ZeroLabs] 2026-08-28 - added: the worker cannot see localStorage */
+// These toggles live in localStorage because the panel reads them synchronously
+// all over the place. The background service worker has NO localStorage at all,
+// and it reads chrome.storage.local - where nothing had ever written these two
+// keys. Every read there came back undefined and defaulted to on, so the
+// background scan ran link AND safety checks regardless of these switches, and
+// the blocklist download gate could never see that safety checking was off.
+//
+// localStorage stays the panel's source of truth; this mirrors it so the worker
+// sees the same answer. Called on load as well as on change, so an existing
+// install carries its current setting over without the user touching anything.
+function mirrorCheckingSettingsToExtensionStorage() {
+  try {
+    chrome.storage.local.set({ linkCheckingEnabled, safetyCheckingEnabled });
+  } catch (error) {
+    console.warn('[Settings] Could not mirror checking settings to the worker:', error);
+  }
+}
+
 function loadCheckingSettings() {
   const savedLinkChecking = localStorage.getItem('linkCheckingEnabled');
   const savedSafetyChecking = localStorage.getItem('safetyCheckingEnabled');
@@ -5039,6 +6305,8 @@ function loadCheckingSettings() {
   const safetyCheckbox = document.getElementById('enableSafetyChecking');
   if (linkCheckbox) linkCheckbox.checked = linkCheckingEnabled;
   if (safetyCheckbox) safetyCheckbox.checked = safetyCheckingEnabled;
+
+  mirrorCheckingSettingsToExtensionStorage();
 }
 
 /* [ZeroLabs] 2026-06-20 10:50 AM - added: load + sync scan concurrency + jitter sliders */
@@ -5367,8 +6635,22 @@ async function scanAllBookmarksForced() {
 
   traverseAll(bookmarkTree);
 
+  /* [ZeroLabs] 2026-08-28 - edited: one system owns the status bar */
+  // This function wrote scanProgress.textContent directly, and did it through
+  // setTimeout(..., 0). updateStatusBar() writes 'Ready' SYNCHRONOUSLY, so a
+  // deferred "Scanning: x/y" queued here landed a tick AFTER that reset and
+  // clobbered it - the log said 'Status reset to "Ready"' truthfully while the
+  // bar showed a stale scan message, and with activeOperations empty nothing
+  // ever corrected it. It also never registered as an operation at all, so any
+  // other operation finishing would reset the bar mid-rescan.
+  //
+  // Everything now goes through setScanningStatus/clearScanningStatus, which
+  // write synchronously and track the operation, so the two can no longer race.
   if (bookmarksToCheck.length === 0) {
-    if (scanProgress) scanProgress.textContent = 'Ready';
+    // No operation was ever registered, so recompute rather than clearing one:
+    // this settles to Ready only if nothing else is running, instead of forcing
+    // 'Ready' over another operation's progress the way the old line did.
+    updateStatusBar();
     return;
   }
 
@@ -5377,8 +6659,8 @@ async function scanAllBookmarksForced() {
   // Mark these bookmarks as being checked
   bookmarksToCheck.forEach(item => checkedBookmarks.add(item.id));
 
-  // Add scanning class and show stop button, hide rescan button
-  if (scanStatusBar) scanStatusBar.classList.add('scanning');
+  // Show stop button, hide rescan button. The scanning class is owned by
+  // setScanningStatus now, so it is not set by hand here.
   const stopBtn = document.getElementById('stopScanBtn');
   const rescanBtn = document.getElementById('rescanAllBtn');
   if (stopBtn) stopBtn.style.display = 'flex';
@@ -5392,7 +6674,7 @@ async function scanAllBookmarksForced() {
   const totalToScan = bookmarksToCheck.length;
   let scannedCount = 0;
   scanCancelled = false; // Reset the cancel flag
-  if (scanProgress) setTimeout(() => scanProgress.textContent = `Scanning: 0/${totalToScan}`, 0);
+  setScanningStatus(RESCAN_ALL_OP, `Scanning: 0/${totalToScan}`);
 
   for (let i = 0; i < bookmarksToCheck.length; i += BATCH_SIZE) {
     if (scanCancelled) {
@@ -5442,7 +6724,7 @@ async function scanAllBookmarksForced() {
     });
 
     scannedCount += results.length;
-    if (scanProgress) setTimeout(() => scanProgress.textContent = `Scanning: ${scannedCount}/${totalToScan}`, 0);
+    setScanningStatus(RESCAN_ALL_OP, `Scanning: ${scannedCount}/${totalToScan}`);
 
     if (i + BATCH_SIZE < bookmarksToCheck.length) {
       await new Promise(resolve => setTimeout(resolve, BATCH_DELAY));
@@ -5450,8 +6732,6 @@ async function scanAllBookmarksForced() {
   }
 
   renderBookmarks();
-  if (scanProgress) setTimeout(() => scanProgress.textContent = scanCancelled ? 'Scan stopped' : 'Scan complete', 0);
-  if (scanStatusBar) scanStatusBar.classList.remove('scanning');
 
   // Hide stop button, show rescan button
   if (stopBtn) stopBtn.style.display = 'none';
@@ -5460,20 +6740,30 @@ async function scanAllBookmarksForced() {
   // Clear checkedBookmarks to free memory after scan completes
   checkedBookmarks.clear();
 
-  // Reset status to "Ready" after 2 seconds
-  setTimeout(() => {
-    if (scanProgress) setTimeout(() => scanProgress.textContent = 'Ready', 0);
-  }, 2000);
+  /* [ZeroLabs] 2026-08-28 - edited: terminal message stays an operation */
+  // The outcome is held as the operation's own message rather than written over
+  // the bar, so anything else still running keeps its progress visible. Clearing
+  // it after two seconds is what settles the bar to Ready - and only if this is
+  // the last operation, which updateStatusBar decides rather than this function.
+  setScanningStatus(RESCAN_ALL_OP, scanCancelled ? 'Scan stopped' : 'Scan complete');
+  setTimeout(() => clearScanningStatus(RESCAN_ALL_OP), 2000);
 
   console.log(`Finished rescanning ${bookmarksToCheck.length} bookmarks`);
 }
 
 // Automatically check bookmark statuses for unchecked bookmarks
 // Uses rate limiting to prevent browser overload
+/* [ZeroLabs] 2026-08-28 - edited: report whether a scan actually happened */
+// Callers recorded a "folder scanned" timestamp as soon as this returned, but an
+// early return was indistinguishable from a completed scan. Expanding a folder
+// with checking switched off therefore marked it scanned for seven days, so
+// turning checking back on left that folder stuck with no statuses and no way to
+// prompt a rescan short of waiting the cache out. Returns true only when the
+// bookmarks were actually scanned or found already current.
 async function autoCheckBookmarkStatuses() {
   // Skip if both checking types are disabled
   if (!linkCheckingEnabled && !safetyCheckingEnabled) {
-    return;
+    return false;
   }
 
   const bookmarksToCheck = [];
@@ -5496,7 +6786,8 @@ async function autoCheckBookmarkStatuses() {
 
   traverse(bookmarkTree, true);
 
-  if (bookmarksToCheck.length === 0) return;
+  // Nothing needed checking, so the folder genuinely is up to date
+  if (bookmarksToCheck.length === 0) return true;
 
   // Update status bar to show scanning using centralized system
   const totalToScan = bookmarksToCheck.length;
@@ -5551,8 +6842,12 @@ async function autoCheckBookmarkStatuses() {
         }
 
         // Update progress immediately after each bookmark completes
+        /* [ZeroLabs] 2026-08-28 - edited: through the status system, not a timer */
+        // A deferred textContent write could land after updateStatusBar had
+        // synchronously reset the bar to Ready, leaving a stale scan message
+        // behind with no operation left to correct it.
         scannedCount++;
-        if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
+        setScanningStatus('auto-check', 'Scanning: ' + scannedCount + '/' + totalToScan);
 
         return result;
       } catch (error) {
@@ -5566,7 +6861,7 @@ async function autoCheckBookmarkStatuses() {
 
         // Update progress even on error
         scannedCount++;
-        if (scanProgress) setTimeout(() => scanProgress.textContent = 'Scanning: ' + scannedCount + '/' + totalToScan, 0);
+        setScanningStatus('auto-check', 'Scanning: ' + scannedCount + '/' + totalToScan);
 
         return errorResult;
       }
@@ -5601,19 +6896,25 @@ async function autoCheckBookmarkStatuses() {
     if (autoScanDepth === 0) {
       checkedBookmarks.clear();
       const wasStopped = scanCancelled;
-      // Drop the 'auto-check' operation (previously leaked) so the centralized
-      // bar can settle to Ready when nothing else is active.
-      clearScanningStatus('auto-check');
-      if (wasStopped && scanProgress) {
-        // Show "Scan stopped" briefly, then fall back to Ready
-        scanProgress.textContent = 'Scan stopped';
-        if (scanStatusBar) scanStatusBar.classList.remove('scanning');
-        setTimeout(() => {
-          if (activeOperations.size === 0 && scanProgress) scanProgress.textContent = 'Ready';
-        }, 2000);
+      /* [ZeroLabs] 2026-08-28 - edited: hold the outcome as the operation itself */
+      // This cleared the operation and THEN wrote "Scan stopped" over the bar
+      // from outside the system, which stomped any other operation still running
+      // and left a message nothing owned. Keeping it as this operation's message
+      // and clearing it two seconds later means updateStatusBar decides what the
+      // bar shows next - Ready only if this really was the last thing running.
+      if (wasStopped) {
+        setScanningStatus('auto-check', 'Scan stopped');
+        setTimeout(() => clearScanningStatus('auto-check'), 2000);
+      } else {
+        // Drop the 'auto-check' operation (previously leaked) so the centralized
+        // bar can settle to Ready when nothing else is active.
+        clearScanningStatus('auto-check');
       }
     }
   }
+
+  // Cancelled part-way through is not a completed scan, so it must not count
+  return !scanCancelled;
 }
 
 
@@ -5766,6 +7067,44 @@ function renderBookmarks() {
   /* [ZeroLabs] 2026-08-17 4:15 PM - added: quick access and recent sections */
   // Hidden while searching or filtering: the tree is already showing matches
   // from everywhere, so mirrored rows would just duplicate the results.
+  /* [ZeroLabs] 2026-08-27 - added: what's-new card */
+  if (!hasSeenLatestCard) {
+    const announcementCard = document.createElement('div');
+    announcementCard.className = 'announcement-card';
+    announcementCard.innerHTML = `
+      <div class="announcement-card-title">What's New as of Aug 27, 2026</div>
+      <div class="announcement-card-body">
+        Sync now runs robustly in the background, even with BMZ closed.
+        <br><br>
+        Every sync is now a proper merge. BMZ compares your local bookmarks against your
+        Snippet, quietly adds whatever is missing from either, and stops the moment something
+        would be removed, renamed or otherwise overwritten to ask your permission before any
+        action takes place. A card appears at the top of your bookmark list and the sync button
+        turns amber. Nothing is lost or changed while it waits.
+        <br><br>
+        Sync settings have been rebuilt and streamlined around a single button that shows you
+        what it's doing, and a switch to turn automatic syncing off (on is the default).
+        <br><br>
+        Deletion is now undoable everywhere — including bulk deletions and whole folders.
+        Restoring a folder from the changelog brings its contents back too.
+        <br><br>
+        BMZ now warns you before saving a bookmark that isn't a valid link.
+      </div>
+      <div class="announcement-card-actions">
+        <button class="announcement-card-dismiss-btn" id="latestCardDismissBtn">Got it</button>
+      </div>
+    `;
+    bookmarkList.appendChild(announcementCard);
+    setTimeout(() => {
+      document.getElementById('latestCardDismissBtn')?.addEventListener('click', dismissLatestCard);
+    }, 0);
+  }
+
+  /* [ZeroLabs] 2026-08-27 - added: deferred sync notice, above everything else */
+  // Ahead of Quick Access, and outside the isNarrowing guard: it is a standing
+  // alert rather than a mirrored list, so it should not vanish when you search.
+  renderSyncNoticeCard(bookmarkList);
+
   const isNarrowing = searchTerm.length > 0 || activeFilters.length > 0;
   if (!isNarrowing) {
     renderSections(bookmarkList);
@@ -5986,6 +7325,112 @@ function buildRecentBody(resolved) {
 
 // One row split in two, with the open section's contents below it. If a display
 // option hides one section, the other takes the full row rather than half.
+/* [ZeroLabs] 2026-08-27 - added: the deferred-sync notice card (see also: Bookmark-Manager-Zero-Website/js/sidebar-adapted.js) */
+// A sync that stops and waits needs to say so without hijacking the panel. The
+// toolbar badge covers the panel being SHUT, and the amber sync arrows are the
+// standing signal once it is open, but neither explains anything and the badge
+// is hidden inside the extensions menu when BMZ is not pinned. This card is the
+// explanation, and it replaces showHeldPushDialog opening by itself on panel
+// open: one surface per divergence, never a card and a modal at once.
+let syncNoticeVisible = false;
+let syncNoticeDismissed = false;
+let syncNoticeCounts = { fromSnippet: 0, fromDevice: 0, overwrites: 0 };
+
+/* [ZeroLabs] 2026-08-27 - added: name the numbers on the card */
+// The card used to say only "found differences", which told you nothing about
+// whether this was worth opening now or after dinner. Added as its own line
+// rather than folded into the sentence above, so the agreed wording is untouched.
+function syncNoticeSummary(counts) {
+  const n = (c, one, many) => `${c} ${c === 1 ? one : many}`;
+  const parts = [];
+  if (counts.fromSnippet > 0) parts.push(n(counts.fromSnippet, 'bookmark', 'bookmarks') + ' to remove from your Snippet');
+  if (counts.fromDevice > 0) parts.push(n(counts.fromDevice, 'bookmark', 'bookmarks') + ' to remove from this device');
+  if (counts.overwrites > 0) parts.push(n(counts.overwrites, 'bookmark', 'bookmarks') + ' to rename or move');
+  return parts.join('  ·  ');
+}
+
+function renderSyncNoticeCard(container) {
+  if (!syncNoticeVisible || syncNoticeDismissed) return;
+
+  const card = document.createElement('div');
+  card.className = 'sync-notice-card';
+  // The leading image is the toolbar sync button in its waiting state: the black
+  // tanuki with amber arrows, in the same circle. Classes, not ids: #syncArrows
+  // already belongs to the header button.
+  card.innerHTML = `
+    <div class="sync-notice-row">
+      <div class="sync-notice-icon">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#000000" d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>
+          <g class="sync-notice-arrows" transform="translate(12, 16) scale(0.56) translate(-12, -12)">
+            <path d="M12,18A6,6 0 0,1 6,12C6,11 6.25,10.03 6.7,9.2L5.24,7.74C4.46,8.97 4,10.43 4,12A8,8 0 0,0 12,20V23L16,19L12,15M12,4V1L8,5L12,9V6A6,6 0 0,1 18,12C18,13 17.75,13.97 17.3,14.8L18.76,16.26C19.54,15.03 20,13.57 20,12A8,8 0 0,0 12,4Z"/>
+          </g>
+        </svg>
+      </div>
+      <div class="sync-notice-text">
+        <div class="sync-notice-title">Sync was paused to protect your data</div>
+        <div class="sync-notice-body">
+          BMZ found differences between your Snippet and your local bookmarks that need
+          your approval. Please review the changes to resume syncing.
+        </div>
+        <div class="sync-notice-summary">${syncNoticeSummary(syncNoticeCounts)}</div>
+      </div>
+    </div>
+    <div class="sync-notice-actions">
+      <button class="sync-notice-review-btn" id="syncNoticeReview">Review changes</button>
+      <button class="sync-notice-dismiss-btn" id="syncNoticeDismiss">Not now</button>
+    </div>
+  `;
+  container.appendChild(card);
+
+  // Deferred like the setup card here: the element is in the DOM but the rest of
+  // the render is still running.
+  setTimeout(() => {
+    document.getElementById('syncNoticeReview')?.addEventListener('click', () => {
+      window.showHeldPushDialog?.();
+    });
+    // Dismissal lasts until the situation changes. The amber sync arrows and the
+    // toolbar badge stay on whatever happens here, so it is never fully silenced.
+    document.getElementById('syncNoticeDismiss')?.addEventListener('click', () => {
+      syncNoticeDismissed = true;
+      renderBookmarks();
+    });
+  }, 0);
+}
+
+/* [ZeroLabs] 2026-08-27 - added: follow the deferral state */
+// Called on a genuine change only, so the worker's five-minute poll re-reaching
+// the same deferral does not undo a dismissal.
+async function setSyncNoticeVisible(needs) {
+  const value = !!needs;
+  if (value === syncNoticeVisible) return;
+  syncNoticeVisible = value;
+  if (value) {
+    // A new deferral is worth showing again even if the last one was dismissed
+    syncNoticeDismissed = false;
+    /* [ZeroLabs] 2026-08-27 - added: read the counts for the summary line */
+    // Fetched here rather than passed in, because the two callers - the panel's
+    // own setSnippetNeedsReconcile and the worker's storage change - know only
+    // that something was deferred, not what.
+    try {
+      const held = await chrome.storage.local.get([
+        'snippet_push_held_items',
+        'snippet_pull_held_items',
+        'snippet_overwrite_held_items'
+      ]);
+      syncNoticeCounts = {
+        fromSnippet: (held.snippet_push_held_items || []).length,
+        fromDevice: (held.snippet_pull_held_items || []).length,
+        overwrites: (held.snippet_overwrite_held_items || []).length
+      };
+    } catch (error) {
+      // The card still stands on its own without the numbers
+      syncNoticeCounts = { fromSnippet: 0, fromDevice: 0, overwrites: 0 };
+    }
+  }
+  renderBookmarks();
+}
+
 function renderSections(container) {
   const showQuickAccess = displayOptions.quickAccess;
   const showRecent = displayOptions.recent;
@@ -7163,10 +8608,14 @@ function toggleFolder(folderId, folderElement) {
     // When expanding a folder, check its bookmarks only if cache expired (>7 days) or never scanned
     if (shouldScanFolder(folderId)) {
       console.log(`[Folder Scan Cache] Folder ${folderId} needs scanning (cache expired or never scanned)`);
-      setTimeout(() => {
-        autoCheckBookmarkStatuses();
-        // Save timestamp after successful scan
-        saveFolderScanTimestamp(folderId);
+      setTimeout(async () => {
+        /* [ZeroLabs] 2026-08-28 - fixed: only record a scan that happened */
+        // The call was not even awaited, so the timestamp was written before the
+        // scan started and regardless of whether it ran at all. Expanding a
+        // folder with checking switched off marked it scanned for seven days,
+        // and it stayed blank long after checking was turned back on.
+        const scanned = await autoCheckBookmarkStatuses();
+        if (scanned) saveFolderScanTimestamp(folderId);
       }, 100);
     } else {
       const lastScan = folderScanTimestamps[folderId];
@@ -7403,7 +8852,7 @@ async function handleFolderAction(action, folder) {
       // SAFETY: Enhanced confirmation showing number of items to be deleted
       const itemCount = await countFolderItems(folder.id);
       const warningMessage = itemCount > 0
-        ? `⚠ Delete folder "${folder.title}" and ALL ${itemCount} item(s) inside?\n\nThis action cannot be undone!`
+        ? `⚠ Delete folder "${folder.title}" and ALL ${itemCount} item(s) inside?\n\nYou can undo this from the toast or the changelog.`
         : `Delete empty folder "${folder.title}"?`;
 
       if (confirm(warningMessage)) {
@@ -7481,6 +8930,9 @@ async function deleteFolder(id) {
       fullData: fullData
     });
 
+    /* [ZeroLabs] 2026-08-27 - added: record it from the copy we just took */
+    await recordLocalDeletion(fullData);
+
     // Show undo toast
     showUndoToast({
       type: 'folder',
@@ -7490,6 +8942,9 @@ async function deleteFolder(id) {
 
     await loadBookmarks();
     renderBookmarks();
+
+    /* [ZeroLabs] 2026-08-27 - added: ask about this deletion now */
+    window.syncAfterLocalDeletion?.();
   } catch (error) {
     console.error('Error deleting folder:', error);
     alert('Failed to delete folder');
@@ -7538,9 +8993,12 @@ async function rescanFolder(folderId, folderTitle) {
   } catch (error) {
     console.error('[Folder Rescan] Error:', error);
     alert(`Failed to rescan folder: ${error.message}`);
-    // Ensure status bar is reset on error
-    if (scanStatusBar) scanStatusBar.classList.remove('scanning');
-    if (scanProgress) scanProgress.textContent = 'Ready';
+    /* [ZeroLabs] 2026-08-28 - edited: recompute rather than forcing Ready */
+    // Forcing 'Ready' here wiped the progress of anything else still running.
+    // Dropping this scan's own operation and letting updateStatusBar decide
+    // settles to Ready only when nothing else is active.
+    clearScanningStatus('background-scan');
+    updateStatusBar();
   }
 }
 
@@ -7595,6 +9053,40 @@ function hideUndoToast() {
   undoData = null;
 }
 
+/* [ZeroLabs] 2026-08-27 - added: restore one deleted item (shared by single and bulk undo) */
+async function restoreDeletedItem(type, data) {
+  /* [ZeroLabs] 2026-08-27 - added: the recorded index may no longer exist */
+  // Deleting items at index 3, 5 and 7 leaves the folder with two children, so
+  // restoring index 7 throws "Index out of bounds". Clamping puts it as close to
+  // where it was as the folder now allows.
+  //
+  // A missing parent means an ancestor folder was deleted in the same batch and
+  // has already been restored WITH this item inside it - creating it again would
+  // duplicate it, so it is skipped.
+  let siblings;
+  try {
+    siblings = await chrome.bookmarks.getChildren(data.parentId);
+  } catch (error) {
+    console.warn('[Undo] Parent no longer exists, already restored with it:', data.title);
+    return;
+  }
+  const index = Math.min(
+    typeof data.index === 'number' ? data.index : siblings.length,
+    siblings.length
+  );
+
+  if (type === 'bookmark') {
+    await chrome.bookmarks.create({
+      title: data.title,
+      url: data.url,
+      parentId: data.parentId,
+      index
+    });
+  } else if (type === 'folder') {
+    await restoreFolderRecursive(data, data.parentId, index);
+  }
+}
+
 // Undo the last deletion
 async function performUndo() {
   if (!undoData) return;
@@ -7627,17 +9119,18 @@ async function performUndo() {
       hideUndoToast();
     } else {
       // Real extension mode
-      if (type === 'bookmark') {
-        // Restore bookmark
-        await chrome.bookmarks.create({
-          title: data.title,
-          url: data.url,
-          parentId: data.parentId,
-          index: data.index
-        });
-      } else if (type === 'folder') {
-        // Restore folder and its contents recursively
-        await restoreFolderRecursive(data, data.parentId, data.index);
+      /* [ZeroLabs] 2026-08-27 - edited: one item or many, same restore */
+      if (type === 'bulk') {
+        /* [ZeroLabs] 2026-08-27 - added: ascending index, or the order comes back scrambled */
+        // Each restore fills a slot, so earlier indexes must go first for the
+        // later ones to still be reachable.
+        const ordered = [...(data || [])].sort(
+          (a, b) => (a.data.index || 0) - (b.data.index || 0));
+        for (const entry of ordered) {
+          await restoreDeletedItem(entry.type, entry.data);
+        }
+      } else {
+        await restoreDeletedItem(type, data);
       }
 
       // Reload and hide toast
@@ -8302,9 +9795,22 @@ async function saveEditModal() {
 
   if (!isFolder) {
     let url = editUrl.value.trim();
-    // Add https:// if no protocol is specified
-    if (url && !url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/)) {
-      url = 'https://' + url;
+    /* [ZeroLabs] 2026-08-27 - edited: same warning the add dialog gives */
+    // Editing could break a working bookmark exactly the way adding could - a
+    // pasted address with a stray space saved and synced with no warning, then
+    // rejected by every stricter client. No swap offered here: the bookmark
+    // already has a title, so a mixed-up pair is not the likely cause.
+    if (url) {
+      const check = classifyBookmarkUrl(url);
+      if (check.problem) {
+        const choice = await showUrlWarningDialog({
+          typed: check.typed,
+          problem: check.problem,
+          canSwap: false
+        });
+        if (choice !== 'save') return;
+      }
+      url = check.url;
     }
     updates.url = url;
   }
@@ -8358,6 +9864,9 @@ async function deleteBookmark(id) {
       fullData: fullData
     });
 
+    /* [ZeroLabs] 2026-08-27 - added: record it from the copy we just took */
+    await recordLocalDeletion(fullData);
+
     // Show undo toast
     showUndoToast({
       type: 'bookmark',
@@ -8367,6 +9876,9 @@ async function deleteBookmark(id) {
 
     await loadBookmarks();
     renderBookmarks();
+
+    /* [ZeroLabs] 2026-08-27 - added: ask about this deletion now */
+    window.syncAfterLocalDeletion?.();
   } catch (error) {
     console.error('Error deleting bookmark:', error);
     alert('Failed to delete bookmark');
@@ -8482,6 +9994,89 @@ function closeAddBookmarkModal() {
 }
 
 // Save new bookmark
+/* [ZeroLabs] 2026-08-27 - added: warn on a doubtful address, never block it (see also: Bookmark-Manager-Zero-Website/js/sidebar-adapted.js) */
+// A bookmark saved with a malformed address does not just fail here - it syncs,
+// and then every stricter client rejects it. Firefox refuses to create it at all
+// and raises the unplaceable-items dialog on every sync until it is deleted.
+//
+// But this only ever WARNS. Nonsense is the user's to save if they want it.
+function classifyBookmarkUrl(typed) {
+  const raw = (typed || '').trim();
+  let url = raw;
+  let weAddedScheme = false;
+
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url);
+  // "localhost:3000" and "myserver:8080" match the scheme pattern but are really
+  // host:port. Without this they were stored as scheme "localhost:" and broke.
+  const isHostPort = /^[a-zA-Z][a-zA-Z0-9+.-]*:\d/.test(url);
+  if (!hasScheme || isHostPort) {
+    url = 'https://' + url;
+    weAddedScheme = true;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    // Nothing can store this - the dot check below cannot even run, since there
+    // is no parsed host to inspect.
+    return { url, typed: raw, problem: 'invalid' };
+  }
+
+  // Only suspicious when WE supplied the scheme. A scheme the user typed
+  // themselves - about:, chrome://, file:// - was meant, and those legitimately
+  // have no dot. An absent host is schemeless by design, not dotless.
+  const host = parsed.hostname;
+  if (weAddedScheme && host && !host.includes('.') && host !== 'localhost' && !host.startsWith('[')) {
+    return { url, typed: raw, problem: 'nodot' };
+  }
+
+  return { url, typed: raw, problem: null };
+}
+
+// Resolves to 'save', 'swap' or 'edit'.
+function showUrlWarningDialog({ typed, problem, canSwap }) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10003; display: flex; align-items: center; justify-content: center;';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'bmz-dialog';
+    dialog.style.cssText = 'background: var(--md-sys-color-surface, #1e1e1e); padding: 24px; border-radius: 12px; max-width: 440px; width: 90%; color: var(--md-sys-color-on-surface, #e0e0e0);';
+
+    // A space almost always means the two fields were swapped, so that one asks
+    // outright. A dotless host is usually a typo, where swapping would rarely be
+    // the right answer, so it only suggests editing.
+    const reason = problem === 'invalid'
+      ? `"${escapeHtml(typed)}" isn't a valid link. Did you mix up the address and the title?`
+      : `"${escapeHtml(typed)}" has no domain ending like .com. If that wasn't intended, change it before saving.`;
+
+    const btn = (id, label, primary) => `
+      <button id="${id}" style="width: 100%; padding: 12px; border-radius: 8px; border: none; cursor: pointer; font-size: 14px; ${primary
+        ? 'background: #f59e0b; color: #1a1a1a; font-weight: 600;'
+        : 'background: var(--md-sys-color-surface-variant, #2a2a2a); color: var(--md-sys-color-on-surface, #e0e0e0);'}">${label}</button>`;
+
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 12px 0; font-size: 18px; color: #f59e0b; text-align: center;">That doesn't look like a web address</h2>
+      <p style="margin: 0 0 20px 0; font-size: 14px;">${reason}</p>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        ${canSwap ? btn('urlWarnSwap', 'Swap them for me', true) : ''}
+        ${btn('urlWarnSave', 'Save it anyway', !canSwap)}
+        ${btn('urlWarnEdit', 'Go back and edit', false)}
+      </div>
+    `;
+
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+
+    const done = (choice) => { modal.remove(); resolve(choice); };
+    dialog.querySelector('#urlWarnSwap')?.addEventListener('click', () => done('swap'));
+    dialog.querySelector('#urlWarnSave').addEventListener('click', () => done('save'));
+    dialog.querySelector('#urlWarnEdit').addEventListener('click', () => done('edit'));
+    modal.addEventListener('click', (e) => { if (e.target === modal) done('edit'); });
+  });
+}
+
 async function saveNewBookmark() {
   const title = document.getElementById('newBookmarkTitle').value;
   let url = document.getElementById('newBookmarkUrl').value.trim();
@@ -8492,10 +10087,30 @@ async function saveNewBookmark() {
     return;
   }
 
-  // Add https:// if no protocol is specified
-  if (!url.match(/^[a-zA-Z][a-zA-Z0-9+.-]*:/)) {
-    url = 'https://' + url;
+  /* [ZeroLabs] 2026-08-27 - edited: warn on a doubtful address, offer the swap */
+  // The prepend stays - a bookmark stored without a scheme does not open
+  // correctly - but a result that cannot be a link now says so instead of being
+  // saved silently and then rejected by every stricter client on sync.
+  const check = classifyBookmarkUrl(url);
+  if (check.problem) {
+    const titleEl = document.getElementById('newBookmarkTitle');
+    const choice = await showUrlWarningDialog({
+      typed: check.typed,
+      problem: check.problem,
+      // Swapping into an empty title would hand back a blank address, which is
+      // worse than what they started with.
+      canSwap: !!(titleEl && titleEl.value.trim())
+    });
+    if (choice === 'edit') return;
+    if (choice === 'swap') {
+      const oldTitle = titleEl.value;
+      titleEl.value = check.typed;
+      document.getElementById('newBookmarkUrl').value = oldTitle;
+      // Re-run, so a swap that is still wrong asks again rather than saving quietly
+      return saveNewBookmark();
+    }
   }
+  url = check.url;
 
   // Check if trying to create bookmark at root level
   if (!parentId) {
@@ -9205,7 +10820,7 @@ async function deleteSelectedDuplicates() {
     return;
   }
 
-  const confirmed = confirm(`⚠ Delete ${checkboxes.length} selected bookmark(s)?\n\nThis action cannot be undone!`);
+  const confirmed = confirm(`⚠ Delete ${checkboxes.length} selected bookmark(s)?\n\nYou can undo this from the toast or the changelog.`);
   if (!confirmed) return;
 
   // Check if user is deleting ALL copies of any URL
@@ -9234,11 +10849,20 @@ async function deleteSelectedDuplicates() {
   try {
     let successCount = 0;
     let failCount = 0;
+    const deleted = [];
 
     for (const checkbox of checkboxes) {
       const bookmarkId = checkbox.dataset.bookmarkId;
       try {
+        /* [ZeroLabs] 2026-08-27 - added: record before removing, like every other delete */
+        const [node] = await chrome.bookmarks.get(bookmarkId);
+        const fullData = node ? JSON.parse(JSON.stringify(node)) : null;
         await chrome.bookmarks.remove(bookmarkId);
+        if (fullData) {
+          await addChangelogEntry('delete', 'bookmark', fullData.title || 'Untitled', fullData.url || null, { fullData });
+          await recordLocalDeletion(fullData);
+          deleted.push({ type: 'bookmark', data: fullData });
+        }
         successCount++;
       } catch (error) {
         console.error(`Failed to delete bookmark ${bookmarkId}:`, error);
@@ -9253,8 +10877,16 @@ async function deleteSelectedDuplicates() {
     // Close modal and show result
     closeDuplicatesModal();
 
+    /* [ZeroLabs] 2026-08-27 - added: ask about these deletions now */
+    window.syncAfterLocalDeletion?.();
+
     if (failCount === 0) {
-      alert(`✓ Successfully deleted ${successCount} bookmark(s)!`);
+      /* [ZeroLabs] 2026-08-27 - edited: an undo toast instead of a blocking alert */
+      showUndoToast({
+        type: 'bulk',
+        data: deleted,
+        message: `${successCount} duplicate${successCount === 1 ? '' : 's'} deleted`
+      });
     } else {
       alert(`⚠ Deleted ${successCount} bookmark(s).\n${failCount} failed to delete.`);
     }
@@ -9565,38 +11197,65 @@ async function restoreChangelogEntry(entryId) {
       const fullData = entry.details.fullData;
 
       try {
-        if (entry.itemType === 'folder') {
-          // Recreate the folder with its properties
-          const newFolder = await chrome.bookmarks.create({
-            title: fullData.title,
-            parentId: fullData.parentId,
-            index: fullData.index
-          });
-
-          alert(`Folder "${fullData.title}" has been restored.\n\nNote: Child items were not restored. You may need to restore them individually from the changelog.`);
-
-          // Add a changelog entry for the restoration
-          await addChangelogEntry('restore', entry.itemType, fullData.title, null, {
-            originalOperation: 'delete',
-            restoredFrom: entry.id
-          });
+        /* [ZeroLabs] 2026-08-27 - edited: use the shared restore, and survive a missing parent */
+        // The folder branch created an EMPTY folder and told the user its contents
+        // were lost - but fullData holds the whole subtree, and restoreDeletedItem
+        // rebuilds it, which is what the undo toast has always done. A parent that
+        // no longer exists now falls back instead of throwing.
+        // Two different reasons to relocate, and they deserve different wording: an
+        // entry logged before a parent was recorded knows nothing about where it was,
+        // which is not the same as its folder being gone.
+        let targetParentId = fullData.parentId;
+        let relocated = null;
+        let parentTitle = '';
+        if (!targetParentId) {
+          relocated = 'unknown';
         } else {
-          // Recreate the bookmark
-          await chrome.bookmarks.create({
-            title: fullData.title,
-            url: fullData.url,
-            parentId: fullData.parentId,
-            index: fullData.index
-          });
-
-          alert(`Bookmark "${fullData.title}" has been restored successfully!`);
-
-          // Add a changelog entry for the restoration
-          await addChangelogEntry('restore', entry.itemType, fullData.title, fullData.url, {
-            originalOperation: 'delete',
-            restoredFrom: entry.id
-          });
+          try {
+            const [p] = await chrome.bookmarks.get(targetParentId);
+            parentTitle = p ? p.title : '';
+          } catch (e) {
+            relocated = 'missing';
+          }
         }
+        if (relocated) {
+          const roots = await chrome.bookmarks.getChildren('0');
+          const fallback = roots && roots[0];
+          targetParentId = fallback ? fallback.id : null;
+          parentTitle = fallback ? fallback.title : '';
+          if (!fallback) relocated = null;
+        }
+        if (!targetParentId) {
+          const roots = await chrome.bookmarks.getChildren('0');
+          const fallback = roots && roots[0];
+          targetParentId = fallback ? fallback.id : null;
+          parentTitle = fallback ? fallback.title : '';
+          relocated = !!fallback;
+        }
+      
+        if (!targetParentId) {
+          alert('Could not restore: there is nowhere to put it.');
+          return;
+        }
+      
+        const where = relocated
+          ? (relocated === 'unknown'
+              ? `
+
+BMZ did not record where this was, so it was restored to "${parentTitle}".`
+              : `
+
+Its original folder no longer exists, so it was restored to "${parentTitle}".`)
+          : '';
+      
+        await restoreDeletedItem(
+          entry.itemType === 'folder' ? 'folder' : 'bookmark',
+          { ...fullData, parentId: targetParentId }
+        );
+      
+        alert(entry.itemType === 'folder'
+          ? `Folder "${fullData.title}" and its contents have been restored.${where}`
+          : `Bookmark "${fullData.title}" has been restored successfully!${where}`);
 
         // Refresh UI
         await loadBookmarks();
@@ -9960,6 +11619,17 @@ async function clearCache() {
       await window.scannerService.clearAllCache();
     }
 
+    /* [ZeroLabs] 2026-08-28 - added: forget WHEN folders were scanned, too */
+    // Clearing the results but keeping the timestamps left every folder marked
+    // "already scanned 0 days ago", so shouldScanFolder skipped them all. The
+    // folderHasCachedStatuses check now catches that on its own, but a stale
+    // timestamp should not outlive the results it refers to either way.
+    folderScanTimestamps = {};
+    // Removed the same way saveFolderScanTimestamp writes it - directly, NOT
+    // via safeStorage, which diverts to session storage in private mode and
+    // would leave the real key in place.
+    await chrome.storage.local.remove('folderScanTimestamps');
+
     console.log('Cache cleared successfully');
     alert('Cache cleared! Status indicators reset to unknown.');
 
@@ -10140,14 +11810,42 @@ async function bulkDeleteItems() {
     return;
   }
 
-  if (!confirm(`⚠️ WARNING: This will permanently delete ${selectedItems.size} selected item(s) and all their contents.\n\nThis action cannot be undone. Are you sure?`)) {
+  if (!confirm(`⚠️ This will delete ${selectedItems.size} selected item(s) and all their contents.\n\nYou can undo this from the toast or the changelog. Are you sure?`)) {
     return;
   }
 
   try {
-    // Delete each selected item
-    for (const itemId of selectedItems) {
+    /* [ZeroLabs] 2026-08-27 - added: record before removing, like every other delete */
+    // Bulk delete wrote nothing to the changelog and showed no undo toast, so the
+    // single most destructive action in BMZ was the only one with no way back.
+    /* [ZeroLabs] 2026-08-27 - added: drop selections contained by another selection */
+    // A folder and a bookmark inside it can both be ticked. removeTree on the
+    // folder takes the child with it, so removing the child afterwards threw and
+    // the whole bulk delete reported failure - and capturing both would have
+    // duplicated the child on undo.
+    const covered = new Set();
+    for (const id of selectedItems) {
+      try {
+        const [n] = await chrome.bookmarks.getSubTree(id);
+        const walk = (node) => (node.children || []).forEach(c => { covered.add(c.id); walk(c); });
+        if (n) walk(n);
+      } catch (error) { /* already gone; the filter below handles it */ }
+    }
+    const topLevelIds = Array.from(selectedItems).filter(id => !covered.has(id));
+
+    const deleted = [];
+    for (const itemId of topLevelIds) {
+      // getSubTree, not get: a folder must be captured with its contents or the
+      // restore brings back an empty shell.
+      const [node] = await chrome.bookmarks.getSubTree(itemId);
+      if (!node) continue;
+      const fullData = JSON.parse(JSON.stringify(node));
+      const itemType = node.url ? 'bookmark' : 'folder';
       await chrome.bookmarks.removeTree(itemId);
+      await addChangelogEntry('delete', itemType, node.title || 'Untitled', node.url || null, { fullData });
+      /* [ZeroLabs] 2026-08-27 - added: record it from the copy we just took */
+      await recordLocalDeletion(fullData);
+      deleted.push({ type: itemType, data: fullData });
     }
 
     selectedItems.clear();
@@ -10155,7 +11853,14 @@ async function bulkDeleteItems() {
     renderBookmarks();
     updateSelectedCount();
 
-    alert('Selected items deleted successfully.');
+    showUndoToast({
+      type: 'bulk',
+      data: deleted,
+      message: `${deleted.length} item${deleted.length === 1 ? '' : 's'} deleted`
+    });
+
+    /* [ZeroLabs] 2026-08-27 - added: ask about these deletions now */
+    window.syncAfterLocalDeletion?.();
   } catch (error) {
     console.error('Error deleting items:', error);
     alert('Failed to delete some items. Please try again.');
@@ -10620,6 +12325,7 @@ function setupEventListeners() {
   enableLinkCheckingToggle.addEventListener('change', (e) => {
     linkCheckingEnabled = e.target.checked;
     localStorage.setItem('linkCheckingEnabled', linkCheckingEnabled);
+    mirrorCheckingSettingsToExtensionStorage();
   });
 
   // Safety checking toggle
@@ -10627,6 +12333,7 @@ function setupEventListeners() {
   enableSafetyCheckingToggle.addEventListener('change', (e) => {
     safetyCheckingEnabled = e.target.checked;
     localStorage.setItem('safetyCheckingEnabled', safetyCheckingEnabled);
+    mirrorCheckingSettingsToExtensionStorage();
   });
 
   /* [ZeroLabs] 2026-06-20 10:50 AM - added: scan concurrency + jitter sliders (DNS load) */
@@ -11495,8 +13202,12 @@ changelogModal.addEventListener('keydown', (e) => {
       }
     }, 100); // 100ms debounce
 
-    // Trigger event-driven push sync to Snippet (30s debounce, 60s rate limit)
-    markSnippetChanges();
+    /* [ZeroLabs] 2026-08-26 11:43 PM - removed: event-driven push (moved to: background.js) */
+    // The service worker now owns every push triggered by a bookmark change, so
+    // that one runs whether or not this panel is open. Leaving the call here as
+    // well would mean two clients pushing the same tree seconds apart. Pins
+    // still push from here via markQuickAccessChanged, since the worker has no
+    // business writing bmz-meta.json.
   };
 
   chrome.bookmarks.onCreated.addListener((id, bookmark) => {
@@ -11966,3 +13677,17 @@ if (document.readyState === 'loading') {
     initHeaderFit();
   }
 })();
+
+/* [ZeroLabs] 2026-08-27 - added: the worker can defer while the panel is open */
+// Everything else here reacts to the panel's own syncing. When the background
+// worker defers, it writes the flag and sets the toolbar badge, and nothing in
+// the panel ever heard about it - so with BMZ unpinned, a deferral raised while
+// you were looking at the panel showed you nothing at all.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.snippet_needs_reconcile) return;
+  const needs = !!changes.snippet_needs_reconcile.newValue;
+  const manualSyncBtn = document.getElementById('manualSyncBtn');
+  if (manualSyncBtn) manualSyncBtn.classList.toggle('sync-attention', needs);
+  setSyncNoticeVisible(needs);
+});
+
