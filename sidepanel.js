@@ -2100,7 +2100,7 @@ async function openSnippetSyncDialog() {
               <svg width="92" height="92" viewBox="0 0 24 24" style="display: block;">
                 <path fill="#000000" d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 01-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 014.82 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0118.6 2a.43.43 0 01.58 0 .42.42 0 01.11.18l2.44 7.51L23 13.45a.84.84 0 01-.35.94z"/>
               </svg>
-              <span id="manualSyncStatus" style="position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">Syncing</span>
+              <span id="manualSyncStatus" style="position: absolute; left: 50%; top: 56%; transform: translate(-50%, -50%); font-size: 13px; font-weight: 700; color: #ffffff; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8);">Sync</span>
             </button>
           </div>
           <hr style="border: none; border-top: 1px solid var(--md-sys-color-outline, #444); margin: 4px 0;">
@@ -2356,9 +2356,13 @@ async function openSnippetSyncDialog() {
       };
 
       manualSyncNowBtn.addEventListener('click', runManualSync);
-      // Opening the dialog is itself a request to sync, so it starts straight
-      // away rather than making you press the button you just navigated to.
-      runManualSync();
+      /* [ZeroLabs] 2026-08-29 - edited: opening the dialog no longer syncs */
+      // It used to call runManualSync() here, on the reasoning that opening the
+      // dialog was itself a request to sync. That made the dialog impossible to
+      // reach for any other purpose: turning OFF background auto-sync, or
+      // switching snippets, meant triggering the very sync you were trying to
+      // stop. The button is right there and clearly labelled; syncing is now
+      // always something the user asks for.
     }
 
     /* [ZeroLabs] 2026-08-27 12:20 PM - added: the two forced overwrites */
@@ -4200,12 +4204,17 @@ async function bringSidesTogether(items, silent = false, push = true) {
       }
     }
 
-    const depth = (path) => (path || '').split('/').length;
+    /* [ZeroLabs] 2026-08-29 - edited: depth from segments, not a string split */
+    // A title containing "/" inflated this count and put items in the wrong
+    // creation order, so a child could be attempted before its parent existed.
+    const depth = (item) => Array.isArray(item.segments)
+      ? item.segments.length
+      : (item.path || '').split('/').length;
     const ordered = [...toAdd].sort((a, b) => {
       const aIsFolder = a.type === 'folder' ? 0 : 1;
       const bIsFolder = b.type === 'folder' ? 0 : 1;
       if (aIsFolder !== bIsFolder) return aIsFolder - bIsFolder;
-      return depth(a.path) - depth(b.path);
+      return depth(a) - depth(b);
     });
 
     let created = 0;
@@ -4215,9 +4224,14 @@ async function bringSidesTogether(items, silent = false, push = true) {
     const skippedItems = [];
 
     for (const item of ordered) {
-      // A diff path ends with the item's own title, so its parent is everything
-      // before the last segment.
-      const segments = (item.path || '').split('/');
+      /* [ZeroLabs] 2026-08-29 - fixed: never split a path back apart on "/" */
+      // This used to do `(item.path || '').split('/')`, which treated a slash in
+      // the bookmark's own TITLE as a folder boundary and invented a folder named
+      // after part of the title. The diff now carries `segments` as an array; the
+      // split remains only as a fallback for a diff built by an older version.
+      const segments = Array.isArray(item.segments)
+        ? item.segments
+        : (item.path || '').split('/');
       if (segments.length < 2) {
         skippedItems.push({ item, reason: 'The snippet lists it outside any folder, so there is nowhere to put it.' });
         continue;
@@ -4317,10 +4331,21 @@ function calculateBookmarkDiff(localTree, remoteTree) {
   };
 
   // Recursively map all items by content-based key (not ID, since Chrome/Firefox use different IDs)
-  const mapItems = (node, map, parentPath = '') => {
+  /* [ZeroLabs] 2026-08-29 - fixed: a "/" in a TITLE was read as a folder break */
+  // `path` is titles joined with "/", and the code that recreates a bookmark used
+  // to split it back apart on "/" to find its folder. Titles contain slashes all
+  // the time - "simulot/immich-go: ...", "owner/repo: ..." - so a bookmark like
+  // that split into an extra segment and the receiving device invented a folder
+  // named after half the title. On a fresh device pulling a whole library that
+  // happened hundreds of times at once: 2911 real bookmarks arrived as 4476.
+  //
+  // `segments` carries the same information as an ARRAY, so a title is one
+  // element no matter what characters are in it. `path` is kept for display.
+  const mapItems = (node, map, parentPath = '', parentSegments = []) => {
     // Normalize title for consistent paths, then build path
     const normalizedTitle = normalizeTitle(node.title || '');
     const path = parentPath ? `${parentPath}/${normalizedTitle}` : normalizedTitle;
+    const segments = parentSegments.concat(normalizedTitle);
 
     // Don't include root folders themselves in the comparison, only their contents
     if (!rootFolderIds.includes(node.id)) {
@@ -4330,11 +4355,11 @@ function calculateBookmarkDiff(localTree, remoteTree) {
         ? `bookmark:${normalizeUrlForDiff(node.url)}:${path}`
         : `folder:${path}`;
 
-      map.set(key, { node, path, parentId: node.parentId || null, originalId: node.id });
+      map.set(key, { node, path, segments, parentId: node.parentId || null, originalId: node.id });
     }
 
     if (node.children) {
-      node.children.forEach(child => mapItems(child, map, path));
+      node.children.forEach(child => mapItems(child, map, path, segments));
     }
   };
 
@@ -4362,6 +4387,8 @@ function calculateBookmarkDiff(localTree, remoteTree) {
         id: remoteItem.originalId,
         title: remoteItem.node.title,
         path: remoteItem.path,
+        // Carried so the receiving side never has to split `path` on "/"
+        segments: remoteItem.segments,
         type: remoteItem.node.type || (remoteItem.node.url ? 'bookmark' : 'folder'),
         url: remoteItem.node.url
       });
@@ -4375,6 +4402,7 @@ function calculateBookmarkDiff(localTree, remoteTree) {
         id: localItem.originalId,
         title: localItem.node.title,
         path: localItem.path,
+        segments: localItem.segments,
         type: localItem.node.url ? 'bookmark' : 'folder',
         url: localItem.node.url
       });

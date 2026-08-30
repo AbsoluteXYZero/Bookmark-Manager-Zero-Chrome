@@ -9,7 +9,7 @@
 
 <p align="center">
   <!-- [ZeroLabs] 2026-08-19 7:12 PM - edited: version badge to 5.2 -->
-  <img src="https://img.shields.io/badge/version-5.4-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-5.5-blue" alt="Version">
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   </a>
@@ -109,10 +109,10 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - **Native Bookmark Integration** - Works directly with Chrome's bookmark system
 - **GitLab Snippet Sync (Optional)** - Cloud backup and cross-device synchronization
   - PAT authentication with AES-256-GCM encryption
-  - Auto-sync every 5 minutes when side panel is open + event-driven sync on changes
-  - Manual sync controls (pull/force push)
+  - Auto-sync every 5 minutes plus event-driven sync on changes, both running in the extension's background
+  - One sync button; anything that would remove, rename or move a bookmark asks first
   - Conflict detection for safe multi-device usage
-  - Side panel must stay open for background sync
+  - Works with the side panel closed
 - **Modern Material Design UI** - Clean, intuitive interface with multiple themes
 - **Side Panel Interface** - Quick access via toolbar icon
 - **Real-time Sync** - Instantly reflects bookmark changes made in Chrome
@@ -230,9 +230,8 @@ Add cloud backup and cross-device synchronization to your bookmarks:
 
    - Changes sync across all your devices via private GitLab Snippets
    - Still works with native Chrome bookmarks (bidirectional sync maintained)
-   - Auto-sync every 5 minutes when side panel is open
-   - Event-driven sync also triggers on bookmark/folder changes
-   - **Important**: Side panel must stay open for background sync to work
+   - Auto-sync every 5 minutes, and again shortly after any bookmark or folder change
+   - Runs in the extension's background, so the side panel does not need to be open
 
 **Adding Sync to Existing Bookmarks**
 
@@ -250,11 +249,11 @@ Already using the extension? Add GitLab sync anytime:
    - **Replace with Snippet** - Use only the snippet's bookmarks
      - Safety feature: Option to download backup before replacing
      - Choose "Download Backup & Replace" (recommended) or "Skip Backup & Replace"
-5. After connecting, manual sync button options:
+5. After connecting, the sync dialog offers:
 
-   - **Pull** - Download and merge remote bookmarks with local
-   - **Push** (auto) - Upload local changes to remote
-   - **Force Push** - Overwrite remote completely (Shift+Click sync button)
+   - **Sync** - The large circular button. Press it to compare both sides. Additions are applied silently in both directions; anything that would remove, rename or move a bookmark stops and asks first. Opening the dialog does not sync on its own, so you can reach the options below without triggering anything.
+   - **Background auto-sync** - A toggle under Snippet Sync Options, on by default. With it off, nothing syncs on its own and the button above still works.
+   - **Overwrite Snippet with Local** / **Overwrite Local with Snippet** - Under Snippet Sync Options. Each names how many bookmarks would be lost before doing anything.
 
 **Token Tips**
 
@@ -313,9 +312,9 @@ All external service usage is disclosed in [PRIVACY.md](PRIVACY.md).
 **API Usage Considerations:**
 
 - **Event-driven sync**: API calls are made when you add/edit/delete bookmarks or folders
-- **Auto-sync polling**: When enabled, checks for remote changes every 5 minutes (when side panel is open)
-- **Manual sync**: Use the "Pull from Snippet" and "Push to Snippet" buttons for manual control
-- **Side panel requirement**: Side panel must remain open for background sync to work
+- **Auto-sync polling**: When enabled, checks for remote changes every 5 minutes
+- **Manual sync**: Press the sync button in GitLab Sync Settings for a one-off check
+- **Runs in the background**: Syncing continues with the side panel closed
 - **Rate limiting protection**: Built-in exponential backoff with jitter respects GitLab API limits
 - **Rate limits**: GitLab has API rate limits; typical bookmark usage stays well within limits
 
