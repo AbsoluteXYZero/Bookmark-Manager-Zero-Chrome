@@ -3062,7 +3062,7 @@
                 <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
               </svg>
             </span>
-            <span>View Bookmark Changelog</span>
+            <span>View Event Log</span>
           </button>
           <div style="padding: 8px 16px; font-size: 11px; color: var(--md-sys-color-on-surface-variant); line-height: 1.4;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -3953,16 +3953,25 @@
     <div class="modal-overlay" aria-hidden="true"></div>
     <div class="modal-content" style="max-width: 700px;">
       <div class="modal-header">
-        <h3 id="changelogModalTitle">Bookmark Changelog</h3>
+        <h3 id="changelogModalTitle">Event Log</h3>
         <button class="modal-close" id="changelogModalClose" aria-label="Close dialog">×</button>
       </div>
       <div class="modal-body" style="max-height: 500px; overflow-y: auto;">
         <div id="changelogContent" style="display: flex; flex-direction: column; gap: 12px;">
-          <!-- Will be populated dynamically -->
+          <!-- [ZeroLabs] 2026-09-08 8:15 AM - added: match Firefox and the website -->
+          <!-- Those two ship a loading block here and Chrome shipped an empty div,
+               so the modal was blank for the instant before the entries render.
+               Replaced by renderChangelog on open. -->
+          <div style="text-align: center; padding: 40px 20px; color: var(--md-sys-color-on-surface-variant);">
+            <svg width="48" height="48" fill="currentColor" viewBox="0 0 24 24" style="opacity: 0.3; margin-bottom: 12px;">
+              <path d="M13.5,8H12V13L16.28,15.54L17,14.33L13.5,12.25V8M13,3A9,9 0 0,0 4,12H1L4.96,16.03L9,12H6A7,7 0 0,1 13,5A7,7 0 0,1 20,12A7,7 0 0,1 13,19C11.07,19 9.32,18.21 8.06,16.94L6.64,18.36C8.27,20 10.5,21 13,21A9,9 0 0,0 22,12A9,9 0 0,0 13,3Z"/>
+            </svg>
+            <p style="font-size: 14px;">Loading events...</p>
+          </div>
         </div>
       </div>
       <div class="modal-footer" style="display: flex; justify-content: space-between;">
-        <button class="btn btn-danger" id="clearChangelogBtn" style="background: #dc2626;">Clear History</button>
+        <button class="btn btn-danger" id="clearChangelogBtn" style="background: #dc2626;">Clear Event Log</button>
         <button class="btn" id="changelogModalCancel">Close</button>
       </div>
     </div>
