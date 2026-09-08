@@ -32,7 +32,7 @@
 
 Bookmark Manager Zero is a Chrome extension that provides a beautiful, feature-rich side panel interface for managing your **native Chrome bookmarks**. It works directly with the bookmarks already built into your browser, with optional cloud sync via a private GitLab repository for backup and cross-device synchronization.
 
-Changes sync **bi-directionally and instantly**: any edits made in Bookmark Manager Zero immediately appear in Chrome's native bookmark system, and vice versa. Don't worry about accidental changes—the built-in undo feature and a changelog in the settings let you quickly restore recently deleted renamed, or moved bookmarks and folders.
+Changes sync **bi-directionally and instantly**: any edits made in Bookmark Manager Zero immediately appear in Chrome's native bookmark system, and vice versa. Don't worry about accidental changes—the built-in undo feature and the Event Log in the settings let you quickly restore recently deleted renamed, or moved bookmarks and folders.
 
 It enhances your bookmark management experience with modern UI, advanced search, safety checking, and intelligent organization tools while keeping your data exactly where it belongs: in Chrome.
 
@@ -174,7 +174,7 @@ Stop blindly clicking old bookmarks. Know which links are dead, parked, or poten
 - **Bulk Operations** - Multi-select mode for batch editing/deletion
 - **Duplicate Detection** - Find and manage duplicate bookmarks
 - **Undo System** - Restore recently deleted bookmarks
-- **Bookmark Changelog** - Track all bookmark and folder changes (creates, moves, deletes, renames) with persistent history
+- **Event Log** - Track all bookmark and folder changes (creates, moves, deletes, renames) with persistent history, plus any errors BMZ runs into
 - **Pre-Sync Snapshot Protection** - Automatic snapshots before sync operations with one-click restore to undo mistaken syncs
 - **Favicon Display** - Show website icons
 
