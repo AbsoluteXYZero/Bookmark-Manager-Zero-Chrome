@@ -1655,6 +1655,26 @@ async function pullEverythingFromCurrentStore() {
   if (toAdd.length === 0) return { added: 0, deferred };
 
   await bringSidesTogether(toAdd, true, false);
+
+  /* [ZeroLabs] 2026-09-24 5:05 AM - fixed: a merge scrambled the order of what it created */
+  // bringSidesTogether creates every missing folder first, then every missing
+  // bookmark, each added at the end of its parent. So a folder that sat between
+  // two bookmarks in the cloud came out above both, and on the website, whose
+  // merge creates shallowest first, subfolders came out below loose bookmarks.
+  // The join then writes this device's tree back, which published that order,
+  // and every other device took it on its next sync.
+  //
+  // Putting what was just created into the cloud's order here, before anything
+  // is written back, means a merge can never publish a new order. Items only
+  // this device holds keep their places.
+  try {
+    const freshTree = await chrome.bookmarks.getTree();
+    const moved = await applySnippetOrder(remoteAsChrome[0], freshTree[0]);
+    if (moved > 0) console.log(`[Setup] Put ${moved} merged item(s) into the cloud's order`);
+  } catch (error) {
+    console.warn('[Setup] Could not apply the cloud order after merging:', error.message);
+  }
+
   await loadBookmarks();
   return { added: toAdd.length, deferred };
 }
