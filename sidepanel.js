@@ -1668,8 +1668,7 @@ async function pullEverythingFromCurrentStore() {
   // is written back, means a merge can never publish a new order. Items only
   // this device holds keep their places.
   try {
-    const freshTree = await chrome.bookmarks.getTree();
-    const moved = await applySnippetOrder(remoteAsChrome[0], freshTree[0]);
+    const moved = await applySnippetOrder(remoteData);
     if (moved > 0) console.log(`[Setup] Put ${moved} merged item(s) into the cloud's order`);
   } catch (error) {
     console.warn('[Setup] Could not apply the cloud order after merging:', error.message);
@@ -5391,12 +5390,25 @@ async function applyFolderOrder(parentId, remoteChildren) {
   return moves;
 }
 
+/* [ZeroLabs] 2026-09-24 6:10 AM - fixed: walk the cloud file itself, not a Chrome-shaped copy of it */
+// This used to take remoteAsChrome, the copy snippetFormatToChromeBookmarks
+// builds for the diff. That copy puts "Bookmarks Menu" back inside Other
+// Bookmarks as its LAST child. So the folder was matched like any other and
+// every sync moved Chrome's "Bookmarks Menu" to the bottom of Other Bookmarks,
+// which Zero found. The comment above claimed that folder is never matched;
+// that is true of the cloud file and was false of the copy.
+//
+// Now each root of the cloud file is mapped to its Chrome location with
+// chromeRootForSnippetKey, the way the background worker already does it. The
+// cloud's Other Bookmarks never contains "Bookmarks Menu", so Chrome's folder of
+// that name is unmatched there and keeps its place. The menu's CONTENTS are
+// still put in order, through the menu root's own mapping to that folder.
 /**
- * Walk the snippet's tree and put every folder that differs into its order.
+ * Walk the cloud file and put every Chrome folder that differs into its order.
  *
  * @returns {Promise<number>} how many items moved in total
  */
-async function applySnippetOrder(remoteRootNode, localRootNode) {
+async function applySnippetOrder(remoteData) {
   let moved = 0;
 
   const walk = async (remoteNode, localNode) => {
@@ -5425,7 +5437,29 @@ async function applySnippetOrder(remoteRootNode, localRootNode) {
     }
   };
 
-  await walk(remoteRootNode, localRootNode);
+  const remoteRoots = (remoteData && remoteData.roots) || {};
+  for (const key of Object.keys(remoteRoots)) {
+    const root = chromeRootForSnippetKey(key);
+    if (!root) continue;
+
+    // The cloud's menu root lives inside Other Bookmarks here, in a folder of
+    // its own name
+    let localId = root.id;
+    for (const segment of root.prefix) {
+      const children = await chrome.bookmarks.getChildren(localId);
+      const match = children.find(child => !child.url && child.title === segment);
+      if (!match) {
+        localId = null;
+        break;
+      }
+      localId = match.id;
+    }
+    if (!localId) continue;
+
+    const [localNode] = await chrome.bookmarks.getSubTree(localId);
+    await walk(remoteRoots[key], localNode);
+  }
+
   return moved;
 }
 
@@ -5525,7 +5559,7 @@ async function reconcileWithSnippet() {
         publishOrder = true;
         console.log('[CloudSync] This device reordered, publishing its order');
       } else {
-        const moved = await applySnippetOrder(remoteAsChrome[0], localTree[0]);
+        const moved = await applySnippetOrder(remoteData);
         if (moved > 0) {
           console.log(`[CloudSync] Took the cloud order for ${moved} item(s)`);
           await loadBookmarks();
@@ -8521,7 +8555,10 @@ async function loadBookmarks() {
 
     const tree = await chrome.bookmarks.getTree();
     // Chrome returns root with children, we want the actual bookmark folders
-    bookmarkTree = tree[0].children || [];
+    /* [ZeroLabs] 2026-09-24 6:30 AM - edited: the fullest root folder is shown first */
+    // Display only. The root folders are shown most bookmarks first, and
+    // everything inside them keeps its own order.
+    bookmarkTree = sortRootsByBookmarkCount(tree[0].children || []);
 
     // Restore status data to reloaded bookmarks
     const restoreStatuses = (nodes) => {
@@ -13398,6 +13435,21 @@ function countBookmarks(folder) {
     return count;
   }, 0);
 }
+
+/* [ZeroLabs] 2026-09-24 6:30 AM - added: order the root folders by how full they are */
+// Returns a NEW array of the root folders, most bookmarks first, counting
+// everything inside their subfolders. Equal counts keep the browser's own
+// order. Only the order of the roots changes; their contents are untouched.
+function sortRootsByBookmarkCount(roots) {
+  return roots
+    .map((node, index) => ({ node, index, count: countBookmarks(node) }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.index - b.index;
+    })
+    .map(entry => entry.node);
+}
+
 
 // Get favicon URL
 function getFaviconUrl(url) {
