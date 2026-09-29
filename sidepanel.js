@@ -11726,23 +11726,13 @@ function closeContextMenuModal() {
 async function handleFolderAction(action, folder) {
   switch (action) {
     case 'add-bookmark':
-      // Open add bookmark modal with this folder pre-selected
-      await openAddBookmarkModal();
-      // Pre-select this folder
-      const folderSelect = document.getElementById('newBookmarkFolder');
-      if (folderSelect) {
-        folderSelect.value = folder.id;
-      }
+      // [ZeroLabs] 2026-09-29 2:11 PM - edited: the modal starts on this folder instead of being changed after it drew
+      await openAddBookmarkModal(folder.id);
       break;
 
     case 'add-subfolder':
-      // Open add folder modal with this folder pre-selected as parent
-      openAddFolderModal();
-      // Pre-select this folder as parent
-      const parentSelect = document.getElementById('newFolderParent');
-      if (parentSelect) {
-        parentSelect.value = folder.id;
-      }
+      // [ZeroLabs] 2026-09-29 2:11 PM - edited: the modal starts on this folder instead of being changed after it drew
+      await openAddFolderModal(folder.id);
       break;
 
     case 'rename':
@@ -12822,6 +12812,27 @@ const moveFolderTree = { expanded: new Set() };
 // forms and anything else built later all share this and cannot drift into
 // different folder pickers again. The expanded state is deliberately shared:
 // opening a branch in one dialog leaves it open in the next.
+/* [ZeroLabs] 2026-09-29 2:11 PM - added: the picked folder must exist as an option (see also: Bookmark-Manager-Zero-Firefox/sidebar.js) */
+// Each tree keeps its answer in a hidden <select>, and a <select> silently drops
+// any value it has no <option> for. Since the tree replaced the flat list those
+// selects hold no folder options, so every pick came back empty and a new
+// bookmark landed in Chrome's default folder. This adds the option first.
+function setPickedFolder(selectElement, folderId) {
+  if (!selectElement) return;
+
+  const id = folderId ? String(folderId) : '';
+  if (id) {
+    const options = Array.from(selectElement.options);
+    const known = options.some(option => option.value === id);
+    if (!known) {
+      const option = document.createElement('option');
+      option.value = id;
+      selectElement.appendChild(option);
+    }
+  }
+  selectElement.value = id;
+}
+
 function renderFolderTree(selectElement, panel, options = {}) {
   if (!panel || !selectElement) return;
 
@@ -12893,7 +12904,8 @@ function renderFolderTree(selectElement, panel, options = {}) {
       row.appendChild(icon);
       row.appendChild(name);
       row.addEventListener('click', () => {
-        selectElement.value = folder.id;
+        // [ZeroLabs] 2026-09-29 2:11 PM - edited: setPickedFolder, a bare assignment was dropped
+        setPickedFolder(selectElement, folder.id);
         panel.querySelectorAll('.folder-tree-row').forEach(other => {
           other.classList.toggle('selected', other.dataset.folderId === folder.id);
         });
@@ -12939,7 +12951,8 @@ function pickFolderWithTree({ heading, excluded = new Set(), initialId = '' } = 
     const valueHolder = dialog.querySelector('#bmzPickFolderValue');
     const treePanel = dialog.querySelector('#bmzPickFolderTree');
 
-    valueHolder.value = initialId || '';
+    // [ZeroLabs] 2026-09-29 2:11 PM - edited: setPickedFolder, a bare assignment was dropped
+    setPickedFolder(valueHolder, initialId);
     renderFolderTree(valueHolder, treePanel, { excluded });
 
     const close = (result) => {
@@ -12998,7 +13011,8 @@ function populateFolderDropdown(selectElement, sortAlphabetically = false) {
 }
 
 // Open add bookmark modal
-async function openAddBookmarkModal() {
+// [ZeroLabs] 2026-09-29 2:11 PM - edited: takes the folder to start on, so "Add bookmark here" shows it picked
+async function openAddBookmarkModal(presetFolderId = '') {
   const modal = document.getElementById('addBookmarkModal');
   const titleInput = document.getElementById('newBookmarkTitle');
   const urlInput = document.getElementById('newBookmarkUrl');
@@ -13029,7 +13043,9 @@ async function openAddBookmarkModal() {
   const lastUsedFolder = localStorage.getItem('lastBookmarkFolder');
   let defaultFolderId = '';
 
-  if (lastUsedFolder && findBookmarkById(bookmarkTree, lastUsedFolder)) {
+  if (presetFolderId && findBookmarkById(bookmarkTree, presetFolderId)) {
+    defaultFolderId = presetFolderId;
+  } else if (lastUsedFolder && findBookmarkById(bookmarkTree, lastUsedFolder)) {
     defaultFolderId = lastUsedFolder;
   } else {
     const menuFolder = buildFolderList(bookmarkTree).find(folder =>
@@ -13039,7 +13055,8 @@ async function openAddBookmarkModal() {
     defaultFolderId = (menuFolder && menuFolder.id) || (firstFolder && firstFolder.id) || '';
   }
 
-  folderSelect.value = defaultFolderId;
+  // [ZeroLabs] 2026-09-29 2:11 PM - edited: setPickedFolder, a bare assignment was dropped
+  setPickedFolder(folderSelect, defaultFolderId);
   if (defaultFolderId) await expandMoveTreeTo(defaultFolderId);
   renderFolderTree(folderSelect, treePanel);
 
@@ -13224,7 +13241,8 @@ async function saveNewBookmark() {
 
 // Open add folder modal
 /* [ZeroLabs] 2026-09-23 12:56 AM - edited: async, because the tree opens the path first */
-async function openAddFolderModal() {
+// [ZeroLabs] 2026-09-29 2:11 PM - edited: takes the parent to start on, so "Add subfolder" shows it picked
+async function openAddFolderModal(presetParentId = '') {
   const modal = document.getElementById('addFolderModal');
   const nameInput = document.getElementById('newFolderName');
   const parentSelect = document.getElementById('newFolderParent');
@@ -13238,7 +13256,9 @@ async function openAddFolderModal() {
   const lastUsedParent = localStorage.getItem('lastFolderParent');
   let defaultParentId = '';
 
-  if (lastUsedParent && findBookmarkById(bookmarkTree, lastUsedParent)) {
+  if (presetParentId && findBookmarkById(bookmarkTree, presetParentId)) {
+    defaultParentId = presetParentId;
+  } else if (lastUsedParent && findBookmarkById(bookmarkTree, lastUsedParent)) {
     defaultParentId = lastUsedParent;
   } else {
     const allFolders = buildFolderList(bookmarkTree);
@@ -13248,7 +13268,8 @@ async function openAddFolderModal() {
     defaultParentId = (menuFolder && menuFolder.id) || (allFolders[0] && allFolders[0].id) || '';
   }
 
-  parentSelect.value = defaultParentId;
+  // [ZeroLabs] 2026-09-29 2:11 PM - edited: setPickedFolder, a bare assignment was dropped
+  setPickedFolder(parentSelect, defaultParentId);
   if (defaultParentId) await expandMoveTreeTo(defaultParentId);
   renderFolderTree(parentSelect, treePanel);
 
@@ -13353,7 +13374,8 @@ async function openMoveToModal(item, isFolder) {
 
   // Start on the item's current parent, with the path to it already open
   const treePanel = document.getElementById('moveToFolderTree');
-  folderSelect.value = item.parentId || '';
+  // [ZeroLabs] 2026-09-29 2:11 PM - edited: setPickedFolder, a bare assignment was dropped
+  setPickedFolder(folderSelect, item.parentId);
   if (item.parentId) await expandMoveTreeTo(item.parentId);
   renderFolderTree(folderSelect, treePanel, { excluded });
 
