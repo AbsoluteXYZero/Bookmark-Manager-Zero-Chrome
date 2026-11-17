@@ -38,7 +38,8 @@ async function decryptApiKey(encrypted) {
     const decoder = new TextDecoder();
     return decoder.decode(decrypted);
   } catch (error) {
-    console.error('Decryption failed:', error);
+    // [ZeroLabs] 2026-11-17 5:03 PM - edited: a plain log, kept off the extension Errors page
+    console.log('Decryption failed:', error);
     return null;
   }
 }
